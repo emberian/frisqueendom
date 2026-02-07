@@ -1,0 +1,21 @@
+{
+    "name": "frisqueendom",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "npm run build:wasm && vite build",
+        "build:wasm": "cd frisque-physics && wasm-pack build --target web --release",
+        "build:wasm:dev": "cd frisque-physics && wasm-pack build --target web --dev",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "three": "^0.170.0"
+    },
+    "devDependencies": {
+        "@types/three": "^0.170.0",
+        "typescript": "^5.7.0",
+        "vite": "^6.4.0"
+    }
+}
