@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FIELD_LENGTH, FIELD_WIDTH } from '../data/Constants';
+import { Random } from '../data/SeededRandom';
 
 const BLADE_COUNT = 15000;
 const BLADE_HEIGHT = 0.07;
@@ -28,6 +29,64 @@ export class GrassField {
             side: THREE.DoubleSide,
         });
 
+        // Add wind sway and coloring via shader for high performance
+        mat.onBeforeCompile = (shader) => {
+            shader.uniforms.time = { value: 0 };
+            shader.uniforms.windDir = { value: new THREE.Vector2(0, 1) };
+            shader.uniforms.windSpeed = { value: 0 };
+            
+            shader.vertexShader = `
+                uniform float time;
+                uniform vec2 windDir;
+                uniform float windSpeed;
+                varying float vRelativeY;
+                varying vec3 vWorldPos;
+            ` + shader.vertexShader;
+
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                `
+                #include <begin_vertex>
+                
+                vRelativeY = position.y / ${BLADE_HEIGHT.toFixed(3)};
+                vWorldPos = (instanceMatrix * vec4(position, 1.0)).xyz;
+
+                if (position.y > 0.0) {
+                    float sway = sin(time * 2.5 + instanceMatrix[3][0] * 0.5 + instanceMatrix[3][2] * 0.3) * 0.02;
+                    float bend = windSpeed * 0.04;
+                    float total = sway + bend;
+                    
+                    transformed.x += total * windDir.x * position.y * 12.0;
+                    transformed.z += total * windDir.y * position.y * 12.0;
+                }
+                `
+            );
+
+            shader.fragmentShader = `
+                uniform float time;
+                varying float vRelativeY;
+                varying vec3 vWorldPos;
+            ` + shader.fragmentShader;
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <color_fragment>',
+                `
+                #include <color_fragment>
+                
+                // Tip brightening / Soil deepening
+                vec3 tipColor = vec3(1.2, 1.1, 0.8); // Sun-kissed tips
+                diffuseColor.rgb *= mix(vec3(0.4, 0.4, 0.4), tipColor, vRelativeY);
+
+                // Cloud shadows (scrolling noise)
+                float noise = sin(vWorldPos.x * 0.1 + time * 0.5) * cos(vWorldPos.z * 0.1 - time * 0.3);
+                float shadow = smoothstep(0.2, 0.8, noise * 0.5 + 0.5);
+                diffuseColor.rgb *= mix(0.7, 1.0, shadow);
+                `
+            );
+
+            this.mesh.userData.shader = shader;
+        };
+
         this.mesh = new THREE.InstancedMesh(geo, mat, BLADE_COUNT);
         this.mesh.receiveShadow = true;
 
@@ -35,10 +94,10 @@ export class GrassField {
         const colors = new Float32Array(BLADE_COUNT * 3);
 
         for (let i = 0; i < BLADE_COUNT; i++) {
-            const x = (Math.random() - 0.5) * FIELD_WIDTH;
-            const z = Math.random() * FIELD_LENGTH;
-            const rot = Math.random() * Math.PI * 2;
-            const scale = 0.8 + Math.random() * 0.4;
+            const x = (Random.next() - 0.5) * FIELD_WIDTH;
+            const z = Random.next() * FIELD_LENGTH;
+            const rot = Random.next() * Math.PI * 2;
+            const scale = 0.8 + Random.next() * 0.4;
 
             this.dummy.position.set(x, 0, z);
             this.dummy.rotation.set(0, rot, 0);
@@ -49,7 +108,7 @@ export class GrassField {
             // Color variation + mowing stripes
             const stripe = Math.floor(z / 3) % 2;
             const baseG = 0.45 + stripe * 0.08;
-            const noise = (Math.random() - 0.5) * 0.08;
+            const noise = (Random.next() - 0.5) * 0.08;
             colors[i * 3] = 0.15 + noise;
             colors[i * 3 + 1] = baseG + noise;
             colors[i * 3 + 2] = 0.12 + noise;
@@ -63,38 +122,11 @@ export class GrassField {
 
     update(dt: number, windSpeed: number, windDirection: number): void {
         this.time += dt;
-        this.windSpeed = windSpeed;
-        this.windDir.set(Math.sin(windDirection), Math.cos(windDirection));
-
-        // Animate grass bending by modifying instance matrices
-        // For perf, only update a subset each frame
-        const batchSize = Math.min(3000, BLADE_COUNT);
-        const offset = (Math.floor(this.time * 60) * batchSize) % BLADE_COUNT;
-
-        for (let i = offset; i < offset + batchSize && i < BLADE_COUNT; i++) {
-            this.mesh.getMatrixAt(i, this.dummy.matrix);
-            this.dummy.matrix.decompose(
-                this.dummy.position,
-                this.dummy.quaternion,
-                this.dummy.scale,
-            );
-
-            // Wind bend
-            const bendAmount = windSpeed * 0.02;
-            const microSway =
-                Math.sin(
-                    this.time * 3 + this.dummy.position.x * 0.5 + this.dummy.position.z * 0.3,
-                ) * 0.015;
-            const totalBend = bendAmount + microSway;
-
-            // Apply lean toward wind direction
-            this.dummy.rotation.x = totalBend * this.windDir.y;
-            this.dummy.rotation.z = -totalBend * this.windDir.x;
-
-            this.dummy.updateMatrix();
-            this.mesh.setMatrixAt(i, this.dummy.matrix);
+        const shader = this.mesh.userData.shader;
+        if (shader) {
+            shader.uniforms.time.value = this.time;
+            shader.uniforms.windDir.value.set(Math.sin(windDirection), Math.cos(windDirection));
+            shader.uniforms.windSpeed.value = windSpeed;
         }
-
-        this.mesh.instanceMatrix.needsUpdate = true;
     }
 }

@@ -2,181 +2,278 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>FrisQueendom Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #071422;
-            --panel: rgba(9, 24, 42, 0.92);
-            --line: rgba(255, 255, 255, 0.18);
+            --bg: #040911;
+            --panel: rgba(12, 22, 42, 0.82);
+            --line: rgba(255, 255, 255, 0.12);
             --text: #e8f1ff;
-            --muted: #94a8c2;
+            --muted: #8298b0;
             --accent: #ffd166;
-            --accent2: #33d6ff;
+            --accent-glow: rgba(255, 209, 102, 0.3);
+            --safe-area-bottom: env(safe-area-inset-bottom, 16px);
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         body {
             min-height: 100vh;
-            background:
-                radial-gradient(900px 500px at 10% -10%, rgba(51, 214, 255, 0.25), transparent 65%),
-                radial-gradient(900px 500px at 90% -20%, rgba(255, 122, 34, 0.25), transparent 65%),
+            background: 
+                radial-gradient(circle at 0% 0%, rgba(51, 214, 255, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(255, 77, 109, 0.1) 0%, transparent 40%),
                 var(--bg);
             color: var(--text);
-            font-family: "Rajdhani", "Avenir Next Condensed", sans-serif;
-            padding: 14px;
+            font-family: 'Rajdhani', sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            inset: 0;
         }
-        .panel {
-            width: min(900px, 100%);
-            margin: 0 auto;
-            background: var(--panel);
-            border: 1px solid var(--line);
-            border-radius: 16px;
-            padding: 14px;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+
+        .header {
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid var(--line);
         }
         h1 {
-            font-family: "Bebas Neue", "Impact", sans-serif;
-            letter-spacing: 0.08em;
-            font-size: 2rem;
-            margin-bottom: 8px;
-        }
-        .muted { color: var(--muted); font-size: 0.95rem; }
-        .row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-top: 12px; }
-        input, button, select {
-            border-radius: 10px;
-            border: 1px solid var(--line);
-            background: rgba(4, 12, 23, 0.72);
-            color: var(--text);
-            padding: 10px;
-            font-size: 1rem;
-            font-family: inherit;
-        }
-        button {
-            cursor: pointer;
+            font-size: 1.4rem;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
+            letter-spacing: 0.12em;
             font-weight: 700;
-        }
-        button.primary {
-            background: linear-gradient(150deg, rgba(255, 122, 34, 0.94), rgba(255, 77, 109, 0.9));
-            border-color: rgba(255, 209, 102, 0.7);
+            background: linear-gradient(to right, #fff, #8298b0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
         #status {
-            margin-top: 10px;
-            font-size: 0.95rem;
-            color: #cde6ff;
-        }
-        .controls {
-            margin-top: 14px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            touch-action: none;
-        }
-        .pad {
-            border-radius: 14px;
-            border: 1px solid var(--line);
-            background: rgba(4, 12, 23, 0.6);
-            min-height: 220px;
-            position: relative;
-            overflow: hidden;
-            touch-action: none;
-        }
-        .pad h2 {
-            position: absolute;
-            top: 8px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: var(--muted);
+            font-weight: 600;
+        }
+        #status.connected { color: #4ade80; }
+
+        .connection-panel {
+            padding: 16px 20px;
+            display: flex;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #fff;
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+        button#connect {
+            padding: 0 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 209, 102, 0.4);
+            background: linear-gradient(150deg, rgba(255, 122, 34, 0.9), rgba(255, 77, 109, 0.9));
+            color: white;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+        }
+
+        .main-controls {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .stick-container {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.05), transparent);
+            border: 2px solid var(--line);
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4), inset 0 4px 10px rgba(0,0,0,0.3);
+            backdrop-filter: blur(4px);
+            touch-action: none;
+        }
+        .stick-container h2 {
+            position: absolute;
+            top: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--muted);
+            letter-spacing: 0.1em;
         }
         #move-knob, #aim-reticle {
-            width: 58px;
-            height: 58px;
+            width: 64px;
+            height: 64px;
             border-radius: 50%;
             position: absolute;
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
             pointer-events: none;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.3);
         }
         #move-knob {
-            background: linear-gradient(150deg, rgba(255, 209, 102, 0.9), rgba(255, 122, 34, 0.9));
+            background: linear-gradient(135deg, #ffd166, #ff7a22);
+            box-shadow: 0 0 15px var(--accent-glow);
         }
         #aim-reticle {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(150deg, rgba(51, 214, 255, 0.95), rgba(96, 132, 255, 0.88));
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #33d6ff, #6084ff);
+            box-shadow: 0 0 15px rgba(51, 214, 255, 0.3);
         }
-        .buttons {
-            margin-top: 10px;
+
+        .action-grid {
+            flex: 1;
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            max-width: 500px;
         }
-        .buttons button[data-hold="true"].active,
-        .buttons button[data-tap="true"].active {
-            border-color: rgba(255, 209, 102, 0.9);
-            background: rgba(255, 209, 102, 0.2);
+
+        .btn {
+            aspect-ratio: 1;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }
-        .legend {
-            margin-top: 12px;
-            font-size: 0.88rem;
+        .btn:active, .btn.active {
+            transform: scale(0.92);
+            border-color: var(--accent);
+            background: rgba(255, 209, 102, 0.15);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+        .btn.primary {
+            background: linear-gradient(150deg, rgba(255, 122, 34, 0.15), rgba(255, 77, 109, 0.15));
+            border-color: rgba(255, 122, 34, 0.4);
+        }
+        .btn.primary:active, .btn.primary.active {
+            background: linear-gradient(150deg, rgba(255, 122, 34, 0.6), rgba(255, 77, 109, 0.6));
+            border-color: #ffd166;
+        }
+        .btn.span-2 { grid-column: span 2; aspect-ratio: auto; min-height: 54px; }
+
+        .footer {
+            padding: 10px 20px calc(var(--safe-area-bottom) + 10px);
+            background: rgba(0, 0, 0, 0.4);
+            border-top: 1px solid var(--line);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
             color: var(--muted);
-            line-height: 1.5;
         }
-        @media (max-width: 760px) {
-            .row { grid-template-columns: 1fr; }
-            .controls { grid-template-columns: 1fr; }
+
+        @media (orientation: portrait) {
+            .main-controls {
+                flex-direction: column;
+                justify-content: center;
+                gap: 40px;
+            }
+            .action-grid {
+                width: 100%;
+                max-width: 320px;
+            }
+            .stick-container {
+                width: 180px;
+                height: 180px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="panel">
-        <h1>FrisQueendom Controller</h1>
-        <p class="muted">Connect this device to the same LAN relay room as the host game.</p>
-
-        <div class="row">
-            <input id="relay-url" type="text" placeholder="ws://host:8787/ws" />
-            <input id="room" type="text" placeholder="Room code" />
-            <button id="connect" class="primary">Connect</button>
-        </div>
-        <div id="status">Disconnected.</div>
-
-        <div class="controls">
-            <div id="move-pad" class="pad">
-                <h2>Move</h2>
-                <div id="move-knob"></div>
-            </div>
-            <div id="aim-pad" class="pad">
-                <h2>Aim</h2>
-                <div id="aim-reticle"></div>
-            </div>
-        </div>
-
-        <div class="buttons">
-            <button data-hold="true" data-action="throw">Throw</button>
-            <button data-hold="true" data-action="forehand">Forehand</button>
-            <button data-hold="true" data-action="sprint">Sprint</button>
-            <button data-hold="true" data-action="jump">Jump</button>
-            <button data-tap="true" data-action="switch">Switch</button>
-            <button data-hold="true" data-action="hammer">Hammer</button>
-            <button data-hold="true" data-action="blade">Blade</button>
-            <button data-hold="true" data-action="thumber">Thumber</button>
-            <button data-hold="true" data-action="high">High</button>
-            <button data-hold="true" data-action="low">Low</button>
-            <button data-hold="true" data-action="curveLeft">Curve -</button>
-            <button data-hold="true" data-action="curveRight">Curve +</button>
-        </div>
-
-        <p class="legend">
-            Gamepad: LS move, RS aim, RT throw, LT forehand, A jump, X switch, Y hammer, B blade, RB thumber, DPad up/down high/low.
-        </p>
+    <div class="header">
+        <h1>FrisQueendom</h1>
+        <div id="status">Ready</div>
     </div>
+
+    <div class="connection-panel">
+        <div style="display:flex; flex-direction:column; gap:8px; flex:1;">
+            <input id="relay-url" type="text" placeholder="Relay URL" />
+            <div style="display:flex; gap:8px;">
+                <input id="room" type="text" placeholder="Room Code" style="flex:2;" />
+                <input id="accent-color" type="color" value="#ffd166" style="flex:1; padding:0; height:42px; min-width:60px; border:none; background:transparent; cursor:pointer;" title="Player Accent Color" />
+            </div>
+        </div>
+        <button id="connect" style="height:auto;">Connect</button>
+    </div>
+
+    <div id="browser-panel" style="padding: 0 20px 20px; display: flex; flex-direction: column; gap: 10px;">
+        <h2 style="font-size: 0.8rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase;">Public Games</h2>
+        <div id="room-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 160px; overflow-y: auto;">
+            <div style="font-size: 0.85rem; color: rgba(255,255,255,0.3); text-align: center; padding: 10px;">Searching for matches...</div>
+        </div>
+    </div>
+
+    <div class="main-controls">
+        <div id="move-pad" class="stick-container">
+            <h2>Move</h2>
+            <div id="move-knob"></div>
+        </div>
+
+        <div class="action-grid">
+            <button class="btn primary span-2" data-hold="true" data-action="throw">Throw</button>
+            <button class="btn primary span-2" data-hold="true" data-action="forehand">Forehand</button>
+            
+            <button class="btn" data-hold="true" data-action="sprint">Sprint</button>
+            <button class="btn" data-hold="true" data-action="jump">Jump</button>
+            <button class="btn" data-tap="true" data-action="switch">Switch</button>
+            <button class="btn" data-hold="true" data-action="hammer">Hammer</button>
+            
+            <button class="btn" data-hold="true" data-action="blade">Blade</button>
+            <button class="btn" data-hold="true" data-action="thumber">Thumber</button>
+            <button class="btn" data-hold="true" data-action="high">High</button>
+            <button class="btn" data-hold="true" data-action="low">Low</button>
+            
+            <button class="btn span-2" data-hold="true" data-action="curveLeft">Curve -</button>
+            <button class="btn span-2" data-hold="true" data-action="curveRight">Curve +</button>
+        </div>
+
+        <div id="aim-pad" class="stick-container">
+            <h2>Aim</h2>
+            <div id="aim-reticle"></div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <span>v0.1.0 Companion</span>
+        <span>LAN Relay Mode</span>
+    </div>
+
     <script type="module" src="/src/controller.ts"></script>
 </body>
 </html>
+

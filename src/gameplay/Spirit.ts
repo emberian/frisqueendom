@@ -2,6 +2,7 @@ import { FOUL_CONSTANTS, SPIRIT_DEFAULTS } from '../data/GameplayConstants';
 import type { Player } from '../entities/Player';
 import type { Disc } from '../entities/Disc';
 import type { Match } from './Match';
+import { Random } from '../data/SeededRandom';
 
 export type FoulType = 'travel' | 'strip' | 'pick' | 'contact' | 'fast_count' | 'timeout';
 export type CallResolution = 'accepted' | 'contested' | 'retracted';
@@ -53,24 +54,34 @@ export class SpiritSystem {
     // Spirit degradation for aggressive play
     private aggressivePlays = 0;
     private fairPlays = 0;
+    
+    private updateTimer = 0;
+    private readonly UPDATE_INTERVAL = 0.1; // Check fouls every 100ms instead of every frame
 
     update(dt: number, match: Match, players: Player[], disc: Disc): void {
-        // Check for potential foul situations
-        this.checkForFouls(match, players, disc);
-        
-        // Update spirit scores based on game events
-        this.updateSpiritScores();
+        this.updateTimer += dt;
+        if (this.updateTimer >= this.UPDATE_INTERVAL) {
+            this.updateTimer = 0;
+            // Check for potential foul situations
+            this.checkForFouls(match, players, disc);
+            // Update spirit scores based on game events
+            this.updateSpiritScores();
+        }
     }
 
     private checkForFouls(match: Match, players: Player[], disc: Disc): void {
-        // Check for contact between players
+        const thresholdSq = FOUL_CONSTANTS.CONTACT_DISTANCE_THRESHOLD * FOUL_CONSTANTS.CONTACT_DISTANCE_THRESHOLD;
+        
+        // Check for contact between players - O(N^2) but only runs at 10Hz
         for (let i = 0; i < players.length; i++) {
+            const p1 = players[i];
+            const p1Pos = p1.movement.position;
+            
             for (let j = i + 1; j < players.length; j++) {
-                const p1 = players[i];
                 const p2 = players[j];
                 
-                const dist = p1.movement.position.distanceTo(p2.movement.position);
-                if (dist < FOUL_CONSTANTS.CONTACT_DISTANCE_THRESHOLD) {
+                const distSq = p1Pos.distanceToSquared(p2.movement.position);
+                if (distSq < thresholdSq) {
                     // Potential contact foul
                     if (this.shouldCallFoul(p1)) {
                         this.callFoul('contact', p1, p2, 'Contact while cutting');
@@ -81,12 +92,13 @@ export class SpiritSystem {
         
         // Check for strip (disc contact while in possession)
         if (disc.state === 'held' && disc.holder) {
+            const holderPos = disc.holder.movement.position;
             for (const player of players) {
                 if (player === disc.holder) continue;
                 if (player.team === disc.holder.team) continue;
                 
-                const dist = player.movement.position.distanceTo(disc.holder.movement.position);
-                if (dist < 0.6 && this.shouldCallFoul(disc.holder)) {
+                const distSq = player.movement.position.distanceToSquared(holderPos);
+                if (distSq < 0.36 && this.shouldCallFoul(disc.holder)) { // 0.6 * 0.6 = 0.36
                     this.callFoul('strip', disc.holder, player, 'Disc contacted while catching');
                 }
             }
@@ -99,7 +111,7 @@ export class SpiritSystem {
             const spirit = player.stats.attributes.spirit;
             const callChance = FOUL_CONSTANTS.BASE_FOUL_CALL_CHANCE + 
                 (spirit / 100) * FOUL_CONSTANTS.SPIRIT_FOUL_MODIFIER;
-            return Math.random() < callChance;
+            return Random.next() < callChance;
         }
         return false; // Player-controlled fouls are called via input
     }
@@ -120,7 +132,7 @@ export class SpiritSystem {
         if (recentCall) return null;
 
         const foul: FoulCall = {
-            id: `foul_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            id: `foul_${Date.now()}_${Random.next().toString(36).substr(2, 9)}`,
             type,
             caller,
             offender,
@@ -153,7 +165,7 @@ export class SpiritSystem {
         const acceptChance = (offenderSpirit / 100) * 0.8;
         const contestChance = 0.1 + (100 - offenderSpirit) / 100 * 0.3;
         
-        const roll = Math.random();
+        const roll = Random.next();
         if (roll < acceptChance) {
             this.resolveFoul(foul, 'accepted');
         } else if (roll < acceptChance + contestChance) {

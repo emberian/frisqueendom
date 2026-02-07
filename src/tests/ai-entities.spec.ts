@@ -16,6 +16,9 @@ import {
     computeDefensivePosition,
     shouldContestCatch,
 } from '../ai/Defense';
+import { TeamAI } from '../ai/TeamAI';
+import { decideOffenseWithDisc, decideDefense } from '../ai/PlayerAI';
+import { Random } from '../data/SeededRandom';
 
 // Import data modules
 import { PlayerStats, generatePlayer, generateRoster } from '../data/PlayerStats';
@@ -467,6 +470,454 @@ describe('AI: Defense', () => {
     });
 });
 
+describe('AI: TeamAI', () => {
+    function createAIMockPlayer(
+        x: number,
+        z: number,
+        team: 'home' | 'away',
+        role: 'handler' | 'cutter' | 'deep_cutter',
+        index: number,
+        stats?: any,
+    ): any {
+        const movement = {
+            position: new THREE.Vector3(x, 0, z),
+            velocity: new THREE.Vector3(),
+            facing: 0,
+            stamina: 100,
+            update: vi.fn(
+                (
+                    dt: number,
+                    dir: { x: number; z: number },
+                    _sprint: boolean,
+                ) => {
+                    movement.velocity.set(dir.x, 0, dir.z);
+                    movement.position.x += dir.x * dt;
+                    movement.position.z += dir.z * dt;
+                },
+            ),
+        };
+
+        return {
+            movement,
+            team,
+            role,
+            index,
+            isControlled: false,
+            holdingDisc: false,
+            update: vi.fn(),
+            stats: stats ?? null,
+        };
+    }
+
+    function createTeam(players: any[]): any {
+        return {
+            players,
+            getHolder: () => players.find((p) => p.holdingDisc),
+        };
+    }
+
+    function createSevenPlayers(team: 'home' | 'away'): any[] {
+        const roles: Array<'handler' | 'cutter' | 'deep_cutter'> = [
+            'handler',
+            'handler',
+            'handler',
+            'cutter',
+            'cutter',
+            'cutter',
+            'deep_cutter',
+        ];
+        return roles.map((role, idx) =>
+            createAIMockPlayer(idx * 2 - 6, idx * 4 + (team === 'home' ? 10 : 40), team, role, idx),
+        );
+    }
+
+    function makeStats(overrides: Record<string, number>): any {
+        return {
+            getEffectiveStat: (key: string) => overrides[key] ?? 50,
+        };
+    }
+
+    it('assigns man matchups immediately after reset', () => {
+        const ai = new TeamAI();
+        ai.setDefenseType('man');
+        ai.resetForPoint();
+
+        const defenders = createSevenPlayers('away');
+        const offenders = createSevenPlayers('home');
+        const team = createTeam(defenders);
+        const opponent = createTeam(offenders);
+        const disc = { position: new THREE.Vector3(0, 0, 30) };
+
+        ai.update(0.016, team, opponent, disc as any, false, 100, 0, 0, 0);
+
+        expect((ai as any).matchups.size).toBeGreaterThan(0);
+    });
+
+    it('supports explicit personality presets with distinct tendencies', () => {
+        Random.seed(333);
+        const patient = new TeamAI();
+        patient.setDifficulty('normal');
+        patient.setPersonality('patient_small_ball');
+
+        Random.seed(333);
+        const huck = new TeamAI();
+        huck.setDifficulty('normal');
+        huck.setPersonality('huck_heavy');
+
+        expect(patient.getDebugPersonality()).toBe('patient_small_ball');
+        expect(huck.getDebugPersonality()).toBe('huck_heavy');
+
+        const patientProfile = patient.getDebugProfile();
+        const huckProfile = huck.getDebugProfile();
+        expect(patientProfile.decisionInterval).toBeGreaterThan(
+            huckProfile.decisionInterval,
+        );
+        expect(patientProfile.secondaryCutChance).toBeLessThan(
+            huckProfile.secondaryCutChance,
+        );
+
+        const patientTendency = patient.getDebugTendency();
+        const huckTendency = huck.getDebugTendency();
+        expect(huckTendency.aggression).toBeGreaterThan(
+            patientTendency.aggression,
+        );
+    });
+
+    it('makes poach chaos materially more aggressive on defense', () => {
+        Random.seed(404);
+        const balanced = new TeamAI();
+        balanced.setDifficulty('normal');
+        balanced.setPersonality('balanced');
+
+        Random.seed(404);
+        const chaos = new TeamAI();
+        chaos.setDifficulty('normal');
+        chaos.setPersonality('poach_chaos');
+
+        const balancedProfile = balanced.getDebugProfile();
+        const chaosProfile = chaos.getDebugProfile();
+        expect(chaosProfile.poachChance).toBeGreaterThan(
+            balancedProfile.poachChance,
+        );
+        expect(chaosProfile.switchDistance).toBeLessThan(
+            balancedProfile.switchDistance,
+        );
+        expect(chaos.getDebugTendency().defenseFlex).toBeGreaterThan(
+            balanced.getDebugTendency().defenseFlex,
+        );
+    });
+
+    it('assigns zone positions immediately after reset', () => {
+        const ai = new TeamAI();
+        ai.setDefenseType('zone_331');
+        ai.resetForPoint();
+
+        const defenders = createSevenPlayers('away');
+        const offenders = createSevenPlayers('home');
+        const team = createTeam(defenders);
+        const opponent = createTeam(offenders);
+        const disc = { position: new THREE.Vector3(0, 0, 30) };
+
+        ai.update(0.016, team, opponent, disc as any, false, 100, 0, 0, 0);
+
+        expect((ai as any).zonePositions.size).toBeGreaterThan(0);
+    });
+
+    it('uses scripted handler cuts with timing and start positions', () => {
+        const ai = new TeamAI();
+        const offense = createSevenPlayers('home');
+        const defense = createSevenPlayers('away');
+        offense[0].holdingDisc = true;
+        offense[1].movement.position.set(2, 0, 6);
+
+        ai.setPlaybookContext(
+            {
+                id: 'f1',
+                name: 'Test',
+                positions: [
+                    { role: 'handler', x: 0, z: 0 },
+                    { role: 'handler', x: 2, z: 2 },
+                    { role: 'handler', x: -2, z: 2 },
+                    { role: 'cutter', x: -5, z: 10 },
+                    { role: 'cutter', x: -5, z: 15 },
+                    { role: 'cutter', x: -5, z: 20 },
+                    { role: 'cutter', x: -5, z: 25 },
+                ],
+            } as any,
+            {
+                id: 'p1',
+                name: 'Script',
+                formationId: 'f1',
+                cuts: [
+                    {
+                        playerRole: 'handler',
+                        timing: 1.0,
+                        startX: 2,
+                        startZ: 6,
+                        endX: 8,
+                        endZ: 6,
+                        priority: 2,
+                    },
+                ],
+            } as any,
+        );
+
+        const disc = { position: new THREE.Vector3(0, 0, 0) };
+        ai.update(
+            0.1,
+            createTeam(offense),
+            createTeam(defense),
+            disc as any,
+            true,
+            100,
+            0,
+            0,
+            0,
+        );
+
+        const before = offense[1].movement.position.clone();
+        ai.update(
+            1.1,
+            createTeam(offense),
+            createTeam(defense),
+            disc as any,
+            true,
+            100,
+            0,
+            0,
+            0,
+        );
+        const after = offense[1].movement.position.clone();
+
+        expect(before.distanceTo(new THREE.Vector3(2, 0, 6))).toBeLessThan(1.0);
+        expect(after.x).toBeGreaterThan(before.x);
+    });
+
+    it('activates multiple cutters under stall pressure', () => {
+        Random.seed(123);
+        const ai = new TeamAI();
+        const offense = createSevenPlayers('home');
+        const defense = createSevenPlayers('away');
+        offense[0].holdingDisc = true;
+
+        const disc = { position: offense[0].movement.position.clone() };
+        ai.update(
+            0.2,
+            createTeam(offense),
+            createTeam(defense),
+            disc as any,
+            true,
+            100,
+            8,
+            0,
+            0,
+        );
+
+        const cutterSprints = offense
+            .filter((p) => p.role !== 'handler')
+            .map((p) =>
+                p.movement.update.mock.calls.some(
+                    (call: any[]) => call[2] === true,
+                ),
+            )
+            .filter(Boolean).length;
+        expect(ai.getDebugActiveCutters().length).toBeGreaterThanOrEqual(2);
+        expect(cutterSprints).toBeGreaterThanOrEqual(2);
+    });
+
+    it('decays inactive cutter timers instead of drifting upward', () => {
+        Random.seed(11);
+        const ai = new TeamAI();
+        const offense = createSevenPlayers('home');
+        const defense = createSevenPlayers('away');
+        offense[0].holdingDisc = true;
+
+        // Lock out opportunistic second cutter activation for deterministic behavior.
+        (ai as any).profile.secondaryCutChance = 0;
+        (ai as any).activeCutterIdx = offense[3].index;
+        (ai as any).cutTimers.set(offense[4], 2.0);
+
+        ai.update(
+            0.2,
+            createTeam(offense),
+            createTeam(defense),
+            { position: new THREE.Vector3(0, 0, 10) } as any,
+            true,
+            100,
+            0,
+            0,
+            0,
+        );
+
+        const timerAfter = (ai as any).cutTimers.get(offense[4]) ?? 0;
+        expect(timerAfter).toBeLessThan(2.0);
+    });
+
+    it('prioritizes open deep threats for primary cutter selection', () => {
+        Random.seed(9);
+        const ai = new TeamAI();
+        ai.setDifficulty('hard');
+        const offense = createSevenPlayers('home');
+        const defense = createSevenPlayers('away');
+
+        offense[0].holdingDisc = true;
+        offense[6].movement.position.set(0, 0, 34); // deep cutter wide open
+        offense[3].movement.position.set(-4, 0, 18);
+        offense[4].movement.position.set(4, 0, 16);
+        offense[5].movement.position.set(1, 0, 15);
+        defense[3].movement.position.set(-3.8, 0, 18.2);
+        defense[4].movement.position.set(4.1, 0, 16.3);
+        defense[5].movement.position.set(1.2, 0, 14.8);
+        defense[6].movement.position.set(12, 0, 25);
+
+        const disc = { position: new THREE.Vector3(0, 0, 10) };
+        ai.update(
+            0.2,
+            createTeam(offense),
+            createTeam(defense),
+            disc as any,
+            true,
+            100,
+            2,
+            0,
+            0,
+        );
+
+        expect(ai.getDebugActiveCutters()).toContain(6);
+    });
+
+    it('prefers skilled receiver when space is similar', () => {
+        Random.seed(42);
+        const thrower = createAIMockPlayer(
+            0,
+            0,
+            'home',
+            'handler',
+            0,
+            makeStats({
+                throwAccuracy: 80,
+                awareness: 80,
+                forehand: 70,
+                backhand: 70,
+            }),
+        );
+        thrower.holdingDisc = true;
+        const weakReceiver = createAIMockPlayer(
+            -6,
+            15,
+            'home',
+            'cutter',
+            1,
+            makeStats({ catching: 20, awareness: 30 }),
+        );
+        const strongReceiver = createAIMockPlayer(
+            6,
+            15,
+            'home',
+            'cutter',
+            2,
+            makeStats({ catching: 95, awareness: 90 }),
+        );
+        const defenders = [
+            createAIMockPlayer(-20, 15, 'away', 'cutter', 0),
+            createAIMockPlayer(20, 15, 'away', 'cutter', 1),
+        ];
+
+        const action = decideOffenseWithDisc(
+            thrower,
+            [thrower, weakReceiver, strongReceiver],
+            defenders,
+            2,
+            100,
+            0,
+            0,
+        );
+
+        expect(action.type).toBe('throw');
+        expect(action.throwParams!.direction.x).toBeGreaterThan(0);
+    });
+
+    it('contests in-flight discs when defender is in range', () => {
+        Random.seed(77);
+        const defender = createAIMockPlayer(0, 10, 'away', 'cutter', 0);
+        const mark = createAIMockPlayer(3, 11, 'home', 'cutter', 1);
+        const action = decideDefense(
+            defender,
+            mark,
+            null,
+            new THREE.Vector3(0.5, 1.2, 10.5),
+            false,
+            0,
+            true,
+            0.2,
+        );
+        expect(action.type).toBe('move');
+        expect(action.sprint).toBe(true);
+        expect(action.target?.x).toBeCloseTo(0.5, 1);
+    });
+
+    it('adapts force side based on sideline pressure', () => {
+        const ai = new TeamAI();
+        ai.setDefenseType('man');
+        ai.resetForPoint();
+
+        const defenders = createSevenPlayers('away');
+        const offenders = createSevenPlayers('home');
+        offenders[0].holdingDisc = true;
+
+        ai.update(
+            0.1,
+            createTeam(defenders),
+            createTeam(offenders),
+            { position: new THREE.Vector3(14, 0, 40), state: 'held' } as any,
+            false,
+            100,
+            2,
+            0,
+            0,
+        );
+        expect(ai.getDebugForceSide()).toBe(-1);
+
+        ai.update(
+            0.1,
+            createTeam(defenders),
+            createTeam(offenders),
+            { position: new THREE.Vector3(-14, 0, 40), state: 'held' } as any,
+            false,
+            100,
+            2,
+            0,
+            0,
+        );
+        expect(ai.getDebugForceSide()).toBe(1);
+    });
+
+    it('assigns a help defender in the red zone', () => {
+        const ai = new TeamAI();
+        ai.setDefenseType('man');
+        ai.resetForPoint();
+
+        const defenders = createSevenPlayers('away');
+        const offenders = createSevenPlayers('home');
+        offenders[0].holdingDisc = true;
+        offenders.forEach((p, idx) => p.movement.position.set(idx - 3, 0, 10 + idx));
+
+        ai.update(
+            0.16,
+            createTeam(defenders),
+            createTeam(offenders),
+            { position: new THREE.Vector3(2, 0, 11), state: 'held' } as any,
+            false,
+            100,
+            6,
+            0,
+            0,
+        );
+
+        expect(ai.getDebugHelpDefenderIndex()).not.toBeNull();
+    });
+});
+
 describe('Data: PlayerStats', () => {
     describe('PlayerStats constructor', () => {
         it('creates player with valid default attributes', () => {
@@ -837,7 +1288,7 @@ describe('Data: SaveLoad', () => {
         it('generates roster of correct size', () => {
             const career = createNewCareer('Test Player', 'Test Team');
 
-            expect(career.team.roster).toHaveLength(20);
+            expect(career.team.roster).toHaveLength(15);
         });
 
         it('initializes team stats to zero', () => {

@@ -19,7 +19,10 @@ test('app has no console errors on load', async ({ page }) => {
     await page.goto('/');
     await page.waitForTimeout(3000);
     // Filter out known non-critical warnings
-    const criticalErrors = errors.filter(e => !e.includes('favicon'));
+    const criticalErrors = errors.filter((e) =>
+        !e.includes('favicon') &&
+        !e.includes("WebSocket connection to 'ws://localhost:8787/ws' failed"),
+    );
     expect(criticalErrors).toHaveLength(0);
 });
 
@@ -32,7 +35,7 @@ test('WASM loads successfully', async ({ page }) => {
         return document.querySelector('.error')?.textContent ?? null;
     });
     expect(wasmError).toBeNull();
-    await expect(page.locator('#start-btn')).toBeVisible();
+    await expect(page.locator('#menu-match')).toBeVisible();
 });
 
 test('Three.js scene initializes', async ({ page }) => {

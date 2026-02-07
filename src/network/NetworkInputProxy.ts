@@ -25,6 +25,7 @@ export class NetworkInputProxy implements GameplayInputSource {
     private curveDelta = 0;
     private aimX = 0.5;
     private aimY = 0.5;
+    private accentColor: string | undefined;
 
     applyState(state: RemoteControllerState): void {
         this.movement.set(state.moveX, state.moveZ);
@@ -44,6 +45,11 @@ export class NetworkInputProxy implements GameplayInputSource {
         this.timeout = state.timeout;
         this.foul = state.foul;
         this.pause = state.pause;
+        this.accentColor = state.accentColor;
+    }
+
+    getAccentColor(): string | undefined {
+        return this.accentColor;
     }
 
     update(_dt: number, viewport?: InputViewport): void {
@@ -109,6 +115,10 @@ export class NetworkInputProxy implements GameplayInputSource {
 
     isCallingFoul(): boolean {
         return this.foul;
+    }
+
+    isKeyDown(_code: string): boolean {
+        return false;
     }
 
     consumeScroll(): number {

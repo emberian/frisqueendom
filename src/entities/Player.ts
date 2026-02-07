@@ -14,14 +14,22 @@ import {
     celebrationPose,
     celebrationFistPump,
     celebrationSpike,
+    celebrationBackflip,
     frustrationPose,
     frustrationArmsUp,
     frustrationHeadDrop,
+    getPose,
 } from '../rendering/Animation';
 import { PLAYER_JOG_SPEED } from '../data/Constants';
 import { STAT_MODIFIERS, ANIMATION_TIMINGS } from '../data/GameplayConstants';
 import type { TeamSide, PlayerRole } from '../data/Types';
 import type { PlayerStats } from '../data/PlayerStats';
+import { Random } from '../data/SeededRandom';
+
+// Reuse vectors to minimize GC
+const _tempVec = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _handOffset = new THREE.Vector3(0.4, 1.3, 0.2);
 
 export class Player {
     movement = new MovementController();
@@ -42,6 +50,7 @@ export class Player {
 
     // Animation blending
     private prevJoints = new Float32Array(JOINT_COUNT * 3);
+    private targetJoints = new Float32Array(JOINT_COUNT * 3);
     private blendProgress = 1.0;
     private readonly blendDuration = 0.15;
     private prevAnimState: string = 'idle';
@@ -52,6 +61,7 @@ export class Player {
     // Celebration/frustration variant
     private celebrationVariant = 0;
     private frustrationVariant = 0;
+    private customCelebration: string | null = null;
 
     // Marking state
     isMarking = false;
@@ -113,13 +123,13 @@ export class Player {
             const clutchMod = this.stats.attributes.clutch / 100;
             const chance = (layoutWillingness * moraleMod * clutchMod) / 100;
             
-            if (Math.random() > chance) {
+            if (Random.next() > chance) {
                 return false; // Player chose not to layout
             }
         }
         
         this.animState = 'layout';
-        this.layoutTarget = target.clone();
+        this.layoutTarget = target; // Just keep reference, don't clone
         this.layoutProgress = 0;
         return true;
     }
@@ -134,8 +144,18 @@ export class Player {
 
     // Trigger celebration (variant by player index for team variety)
     celebrate(): void {
-        this.celebrationVariant = this.index % 3;
+        if (this.customCelebration === 'spike') {
+            this.celebrationVariant = 2;
+        } else if (this.customCelebration === 'backflip') {
+            this.celebrationVariant = 3;
+        } else {
+            this.celebrationVariant = this.index % 3;
+        }
         this.setAnimState('celebrate');
+    }
+
+    setCustomCelebration(key: string | null): void {
+        this.customCelebration = key;
     }
 
     // Trigger frustration (variant by player index)
@@ -148,6 +168,14 @@ export class Player {
     setMarking(active: boolean, stallIntensity: number): void {
         this.isMarking = active;
         this.markStallIntensity = stallIntensity;
+    }
+
+    getAnimState(): string {
+        return this.animState;
+    }
+
+    getAnimTimer(): number {
+        return this.animTimer;
     }
 
     private setAnimState(state: typeof this.animState): void {
@@ -171,15 +199,15 @@ export class Player {
                 this.layoutTarget = null;
             } else {
                 // Move player toward layout target
-                const dir = new THREE.Vector3().subVectors(this.layoutTarget, this.movement.position);
-                dir.y = 0;
-                const dist = dir.length();
+                _tempVec.subVectors(this.layoutTarget, this.movement.position);
+                _tempVec.y = 0;
+                const dist = _tempVec.length();
                 if (dist > 0.1) {
-                    dir.normalize();
+                    _tempVec.normalize();
                     const layoutSpeed = 15 * Math.sin(this.layoutProgress * Math.PI);
-                    this.movement.velocity.copy(dir).multiplyScalar(layoutSpeed);
+                    this.movement.velocity.copy(_tempVec).multiplyScalar(layoutSpeed);
                     this.movement.position.addScaledVector(this.movement.velocity, dt);
-                    this.movement.facing = Math.atan2(dir.x, dir.z);
+                    this.movement.facing = Math.atan2(_tempVec.x, _tempVec.z);
                 }
             }
         } else if (this.isControlled && input) {
@@ -193,27 +221,32 @@ export class Player {
         // Animation state machine
         const speed = this.movement.velocity.length();
         const time = performance.now() / 1000;
-        let targetJoints: Float32Array;
+        let pose: Float32Array;
 
-        switch (this.animState) {
-            case 'throw':
+        if (this.remoteAnim) {
+            pose = getPose(this.remoteAnim, this.remoteAnimTime);
+            this.remoteAnim = null; // Clear after use
+        } else {
+            switch (this.animState) {
+                case 'throw':
                 this.animTimer += dt;
-                targetJoints = throwingPose(this.animTimer, this.lastThrowType);
+                pose = throwingPose(this.animTimer, this.lastThrowType);
                 if (this.animTimer > 0.5) {
                     this.setAnimState('idle');
                 }
                 break;
 
             case 'layout':
-                targetJoints = layoutPose(this.layoutProgress);
+                pose = layoutPose(this.layoutProgress);
                 break;
 
             case 'celebrate':
                 this.animTimer += dt;
                 switch (this.celebrationVariant) {
-                    case 1: targetJoints = celebrationFistPump(this.animTimer); break;
-                    case 2: targetJoints = celebrationSpike(this.animTimer); break;
-                    default: targetJoints = celebrationPose(this.animTimer); break;
+                    case 1: pose = celebrationFistPump(this.animTimer); break;
+                    case 2: pose = celebrationSpike(this.animTimer); break;
+                    case 3: pose = celebrationBackflip(this.animTimer); break;
+                    default: pose = celebrationPose(this.animTimer); break;
                 }
                 if (this.animTimer > 3) {
                     this.setAnimState('idle');
@@ -223,9 +256,9 @@ export class Player {
             case 'frustrated':
                 this.animTimer += dt;
                 switch (this.frustrationVariant) {
-                    case 1: targetJoints = frustrationArmsUp(this.animTimer); break;
-                    case 2: targetJoints = frustrationHeadDrop(this.animTimer); break;
-                    default: targetJoints = frustrationPose(this.animTimer); break;
+                    case 1: pose = frustrationArmsUp(this.animTimer); break;
+                    case 2: pose = frustrationHeadDrop(this.animTimer); break;
+                    default: pose = frustrationPose(this.animTimer); break;
                 }
                 if (this.animTimer > 2) {
                     this.setAnimState('idle');
@@ -234,34 +267,38 @@ export class Player {
 
             default: // idle, run, sprint, marking based on movement
                 if (this.holdingDisc && speed < 0.5) {
-                    targetJoints = holdingDiscIdlePose(time);
+                    pose = holdingDiscIdlePose(time);
                     this.animState = 'idle';
                 } else if (this.isMarking && speed < 1.0) {
-                    targetJoints = markingPose(time, this.markStallIntensity);
+                    pose = markingPose(time, this.markStallIntensity);
                     this.animState = 'marking';
                 } else if (speed < 0.5) {
-                    targetJoints = idlePose(time);
+                    pose = idlePose(time);
                     this.animState = 'idle';
                 } else {
                     const isSprinting = speed > PLAYER_JOG_SPEED + 1;
                     const stride = isSprinting ? 2.0 : 1.5;
                     this.animPhase += (speed / stride) * dt;
                     this.animPhase %= 1.0;
-                    targetJoints = isSprinting
+                    pose = isSprinting
                         ? sprintPose(speed, this.animPhase)
                         : runPose(speed, this.animPhase);
                     this.animState = isSprinting ? 'sprint' : 'run';
                 }
+            }
         }
+        
+        // Safety copy because Pose functions share POSE_BUFFER
+        this.targetJoints.set(pose);
 
         // Animation blending
         let joints: Float32Array;
         if (this.blendProgress < 1.0) {
             this.blendProgress = Math.min(1.0, this.blendProgress + dt / this.blendDuration);
             const t = this.blendProgress * this.blendProgress * (3 - 2 * this.blendProgress); // smoothstep
-            joints = lerpPose(this.prevJoints, targetJoints, t);
+            joints = lerpPose(this.prevJoints, this.targetJoints, t);
         } else {
-            joints = targetJoints;
+            joints = this.targetJoints;
         }
         // Snapshot for next blend
         this.prevJoints.set(joints);
@@ -291,11 +328,17 @@ export class Player {
     }
 
     getHandPosition(): THREE.Vector3 {
-        const offset = new THREE.Vector3(0.4, 1.3, 0.2);
-        offset.applyAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            this.movement.facing,
-        );
-        return this.movement.position.clone().add(offset);
+        _tempVec.copy(_handOffset);
+        _tempVec.applyAxisAngle(_up, this.movement.facing);
+        _tempVec.add(this.movement.position);
+        return _tempVec.clone(); // Still cloning here to return a safe instance, but we could return _tempVec if we were careful
+    }
+
+    private remoteAnim: string | null = null;
+    private remoteAnimTime: number = 0;
+
+    setRemotePose(anim: string, time: number): void {
+        this.remoteAnim = anim;
+        this.remoteAnimTime = time;
     }
 }

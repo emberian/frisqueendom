@@ -1,19 +1,25 @@
 import * as THREE from 'three';
 import type { Player } from '../entities/Player';
-import type { Disc } from '../entities/Disc';
 import {
     evaluateOpenness,
     computeLeadPass,
     computeCutTarget,
-    computeStackPositions,
-    computeHandlerPositions,
 } from './Offense';
-import { computeDefensivePosition } from './Defense';
-import { computeMarkPosition, updateMarkMirror } from './Marking';
-import type { ThrowParams, TeamSide } from '../data/Types';
-import { PLAYER_SPRINT_SPEED } from '../data/Constants';
+import { computeDefensivePosition, shouldContestCatch } from './Defense';
+import { computeMarkPosition } from './Marking';
+import type { ThrowParams } from '../data/Types';
+import { THROW_CONFIGS } from '../data/GameplayConstants';
+import type { ThrowType } from '../gameplay/Throw';
+import { Random } from '../data/SeededRandom';
 
 const _target = new THREE.Vector3();
+const _temp = new THREE.Vector3();
+const _temp2 = new THREE.Vector3();
+const _facing = new THREE.Vector3();
+const _toMark = new THREE.Vector3();
+const _laneVec = new THREE.Vector3();
+const _toDef = new THREE.Vector3();
+const _closestLane = new THREE.Vector3();
 
 export interface AIAction {
     type: 'move' | 'throw' | 'none';
@@ -28,57 +34,158 @@ export function decideOffenseWithDisc(
     defenders: Player[],
     stallCount: number,
     attackingEndzone: number,
+    windSpeed: number = 0,
+    windDir: number = 0,
 ): AIAction {
-    // Evaluate openness of all teammates
     let bestReceiver: Player | null = null;
+    let bestScore = -Infinity;
     let bestOpenness = 0;
+    const attackDir = attackingEndzone === 0 ? -1 : 1;
 
-    const threshold = stallCount < 5 ? 0.7 : stallCount < 8 ? 0.4 : 0.1;
+    let nearestDef: Player | null = null;
+    let nearestDefDist = Infinity;
+    for (const d of defenders) {
+        const dDist = d.movement.position.distanceTo(player.movement.position);
+        if (dDist < nearestDefDist) {
+            nearestDefDist = dDist;
+            nearestDef = d;
+        }
+    }
+
+    const throwerSkill = player.stats
+        ? (player.stats.getEffectiveStat('throwAccuracy') +
+              player.stats.getEffectiveStat('awareness')) /
+          200
+        : 0.55;
 
     for (const tm of teammates) {
         if (tm === player || tm.holdingDisc) continue;
-        const open = evaluateOpenness(player, tm, defenders, attackingEndzone);
-        if (open > bestOpenness) {
-            bestOpenness = open;
+        const openness = evaluateOpenness(
+            player,
+            tm,
+            defenders,
+            attackingEndzone,
+        );
+        const dist = player.movement.position.distanceTo(tm.movement.position);
+        const yardGain =
+            (tm.movement.position.z - player.movement.position.z) * attackDir;
+        const gainScore = Math.max(-0.4, Math.min(1.2, yardGain / 24));
+        const receiverSkill = tm.stats
+            ? (tm.stats.getEffectiveStat('catching') +
+                  tm.stats.getEffectiveStat('awareness')) /
+              200
+            : 0.5;
+        const difficultyPenalty = Math.min(
+            1.5,
+            dist / 28 + tm.movement.velocity.length() / 11,
+        );
+        const windPenalty =
+            Math.min(1, windSpeed / 9) * Math.min(1, dist / 25);
+        const pressurePenalty =
+            nearestDefDist < 2.8
+                ? ((2.8 - nearestDefDist) / 2.8) * 0.45
+                : 0;
+        const resetBonus = stallCount >= 6 && yardGain < 4 ? 0.22 : 0;
+        const bailoutBonus = stallCount >= 8 ? 0.18 : 0;
+
+        const score =
+            openness * 0.45 +
+            gainScore * 0.2 +
+            receiverSkill * 0.16 +
+            throwerSkill * 0.12 +
+            resetBonus +
+            bailoutBonus -
+            difficultyPenalty * 0.22 -
+            windPenalty * 0.12 -
+            pressurePenalty;
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestOpenness = openness;
             bestReceiver = tm;
         }
     }
 
-    if (bestReceiver && bestOpenness > threshold) {
-        const speed = 15 + bestOpenness * 5;
-        const leadTarget = computeLeadPass(player, bestReceiver, speed);
-        const direction = leadTarget
-            .clone()
-            .sub(player.movement.position)
-            .normalize();
-        direction.y = 0.08;
-        direction.normalize();
-
-        // Choose forehand vs backhand based on receiver side
-        const toReceiver = bestReceiver.movement.position
-            .clone()
-            .sub(player.movement.position);
-        const cross =
-            Math.sin(player.movement.facing) * toReceiver.z -
-            Math.cos(player.movement.facing) * toReceiver.x;
-        const isForehand = cross > 0;
-
-        const throwParams: ThrowParams = {
-            position: player.movement.position.clone().setY(1.5),
-            direction,
-            speed,
-            spinRate: (isForehand ? 90 : 70) * 0.8,
-            noseAngle: 0.05 - speed * 0.003,
-            hyzerAngle: 0.05,
-            releaseHeight: 1.5,
-            offAxis: 0,
-            isForehand,
-        };
-
-        return { type: 'throw', throwParams };
+    const threshold =
+        stallCount < 4 ? 0.62 : stallCount < 7 ? 0.32 : stallCount < 9 ? 0.05 : -0.25;
+    if (!bestReceiver || (bestScore < threshold && stallCount < 8)) {
+        return { type: 'none' };
     }
 
-    return { type: 'none' };
+    const dist = player.movement.position.distanceTo(
+        bestReceiver.movement.position,
+    );
+    const speed = Math.max(
+        11,
+        Math.min(33, 9 + dist * 0.78 + bestOpenness * 2.5 + bestScore * 1.8),
+    );
+
+    const leadTarget = computeLeadPass(player, bestReceiver, speed);
+    const direction = _temp.copy(leadTarget).sub(player.movement.position).normalize();
+
+    let throwType: ThrowType = 'backhand';
+    const toReceiver = _temp2
+        .copy(bestReceiver.movement.position)
+        .sub(player.movement.position);
+    _facing.set(Math.sin(player.movement.facing), 0, Math.cos(player.movement.facing));
+    const cross = _facing.x * toReceiver.z - _facing.z * toReceiver.x;
+    const isForehandSide = cross > 0;
+    throwType = isForehandSide ? 'forehand' : 'backhand';
+
+    if (player.stats) {
+        const fh = player.stats.getEffectiveStat('forehand');
+        const bh = player.stats.getEffectiveStat('backhand');
+        if (Math.abs(fh - bh) > 12) {
+            throwType = fh > bh ? 'forehand' : 'backhand';
+        }
+    }
+
+    const isMarked = nearestDefDist < 2.5;
+    if (isMarked && nearestDef) {
+        _toMark
+            .copy(nearestDef.movement.position)
+            .sub(player.movement.position)
+            .normalize();
+        const dot = _toMark.dot(direction);
+        if (dot > 0.72) {
+            if (dist > 15 && Random.next() < 0.55) {
+                throwType = throwType === 'forehand' ? 'scoober' : 'hammer';
+            } else if (dist < 11 && Random.next() < 0.5) {
+                throwType = 'blade';
+            }
+        }
+    }
+
+    const config = THROW_CONFIGS[throwType];
+    direction.y = config.upAngle + (speed / 30) * 0.05;
+    direction.normalize();
+
+    if (windSpeed > 2) {
+        const windX = Math.sin(windDir) * windSpeed;
+        const windZ = Math.cos(windDir) * windSpeed;
+        const flightTime = dist / speed;
+        const comp = 0.02 * flightTime;
+        direction.x -= windX * comp;
+        direction.z -= windZ * comp;
+        direction.normalize();
+    }
+
+    const throwParams: ThrowParams = {
+        position: player.movement.position.clone().setY(1.5),
+        direction: direction.clone(),
+        speed,
+        spinRate: config.spinRate * (0.8 + Random.next() * 0.2),
+        noseAngle: config.noseAngle + (0.05 - (speed / 30) * 0.1),
+        hyzerAngle: config.hyzerDefault + (throwType === 'forehand' ? -0.05 : 0.05),
+        releaseHeight: 1.5,
+        offAxis: config.offAxis,
+        isForehand:
+            throwType === 'forehand' ||
+            throwType === 'hammer' ||
+            throwType === 'scoober',
+    };
+
+    return { type: 'throw', throwParams };
 }
 
 export function decideOffenseWithoutDisc(
@@ -110,7 +217,7 @@ export function decideOffenseWithoutDisc(
         const clearX =
             player.movement.position.x > 0 ? -15 : 15;
         _target.set(clearX, 0, player.movement.position.z);
-        return { type: 'move', target: _target.clone(), sprint: false };
+        return { type: 'move', target: _target, sprint: false };
     }
 
     // Decide cut direction based on defender position
@@ -142,19 +249,56 @@ export function decideDefense(
     discHolder: Player | null,
     discPos: THREE.Vector3,
     isMarker: boolean,
+    stallCount: number = 0,
+    discInFlight: boolean = false,
+    poachChance: number = 0.12,
+    forceSide: number = 1,
 ): AIAction {
-    if (!mark) return { type: 'none' };
-
-    if (isMarker && discHolder) {
-        // Mark the thrower
-        const markPos = computeMarkPosition(discHolder, 1);
-        return { type: 'move', target: markPos, sprint: false };
+    if (!mark) {
+        if (discInFlight && player.movement.position.distanceTo(discPos) < 5) {
+            return { type: 'move', target: discPos, sprint: true };
+        }
+        return { type: 'none' };
     }
 
-    // Guard cutter
+    if (discInFlight && shouldContestCatch(player, discPos, mark)) {
+        return { type: 'move', target: discPos, sprint: true };
+    }
+
+    if (isMarker && discHolder) {
+        const markPos = computeMarkPosition(discHolder, forceSide, stallCount);
+        return { type: 'move', target: markPos, sprint: stallCount > 6 };
+    }
+
+    if (discHolder && !isMarker) {
+        _laneVec.copy(mark.movement.position).sub(discHolder.movement.position);
+        const laneLen = _laneVec.length();
+        if (laneLen > 0.1) {
+            _laneVec.multiplyScalar(1 / laneLen);
+            _toDef.copy(player.movement.position).sub(discHolder.movement.position);
+            const proj = _toDef.dot(_laneVec);
+            if (proj > 1 && proj < laneLen - 0.5) {
+                _closestLane
+                    .copy(_laneVec)
+                    .multiplyScalar(proj)
+                    .add(discHolder.movement.position);
+                const laneDist = player.movement.position.distanceTo(_closestLane);
+                const poachWindow = 1.25 + poachChance * 0.9;
+                const poachRoll =
+                    poachChance + Math.min(0.18, stallCount * 0.015);
+                if (laneDist < poachWindow && Random.next() < poachRoll) {
+                    const intercept = _closestLane
+                        .clone()
+                        .addScaledVector(_laneVec, Math.min(2.5, laneLen - proj));
+                    return { type: 'move', target: intercept, sprint: true };
+                }
+            }
+        }
+    }
+
     const defPos = computeDefensivePosition(mark, discPos);
     const dist = player.movement.position.distanceTo(mark.movement.position);
-    const sprint = dist > 3;
+    const sprint = dist > 2.5;
     return { type: 'move', target: defPos, sprint };
 }
 
@@ -164,9 +308,9 @@ export function moveToward(
     dt: number,
     sprint: boolean,
 ): void {
-    const diff = target.clone().sub(player.movement.position);
-    diff.y = 0;
-    const dist = diff.length();
+    _temp.copy(target).sub(player.movement.position);
+    _temp.y = 0;
+    const dist = _temp.length();
 
     if (dist < 0.5) {
         player.movement.update(dt, { x: 0, z: 0 }, false);
@@ -175,6 +319,6 @@ export function moveToward(
 
     // Don't sprint when stamina is low
     const canSprint = sprint && player.movement.stamina > 10;
-    const dir = { x: diff.x / dist, z: diff.z / dist };
+    const dir = { x: _temp.x / dist, z: _temp.z / dist };
     player.movement.update(dt, dir, canSprint);
 }

@@ -271,6 +271,38 @@ export class AudioEngine {
         src.stop(now + duration);
     }
 
+    playBlockSound(): void {
+        const ctx = this.ensureContext();
+        const now = ctx.currentTime;
+        // Punchy low-mid thud
+        const osc = ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+        const g1 = ctx.createGain();
+        g1.gain.setValueAtTime(0.4, now);
+        g1.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        osc.connect(g1);
+        g1.connect(this.getMaster());
+        osc.start(now);
+        osc.stop(now + 0.1);
+        // Slap noise
+        const buf = this.makeNoiseBuf(ctx, 0.04, 0.8);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 1200;
+        const g2 = ctx.createGain();
+        g2.gain.setValueAtTime(0.3, now);
+        g2.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+        src.connect(bp);
+        bp.connect(g2);
+        g2.connect(this.getMaster());
+        src.start(now);
+        src.stop(now + 0.04);
+    }
+
     playDiscSpike(): void {
         const ctx = this.ensureContext();
         const now = ctx.currentTime;

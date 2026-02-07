@@ -78,8 +78,8 @@ function testCareerCreation(): void {
     assert('Initial season is 1', career.season === 1, `season=${career.season}`);
     assert('Initial week is 1', career.week === 1, `week=${career.week}`);
     assert(
-        'Roster has 20 players',
-        career.team.roster.length === 20,
+        'Roster has 15 players in club mode',
+        career.team.roster.length === 15,
         `size=${career.team.roster.length}`,
     );
     assert(
@@ -91,6 +91,16 @@ function testCareerCreation(): void {
         'Schedule pre-generated',
         career.schedule.length === CAREER_CONSTANTS.DEFAULT_SEASON_LENGTH,
         `events=${career.schedule.length}`,
+    );
+    assert(
+        'Offense lineup initialized',
+        career.team.offenseLineupIds.length === 7,
+        `oline=${career.team.offenseLineupIds.length}`,
+    );
+    assert(
+        'Defense lineup initialized',
+        career.team.defenseLineupIds.length === 7,
+        `dline=${career.team.defenseLineupIds.length}`,
     );
 }
 
@@ -109,8 +119,8 @@ function testSeasonSchedule(): void {
     );
     const tournaments = schedule.filter((event) => event.type === 'tournament').length;
     assert(
-        'Expected tournament cadence',
-        tournaments === 4,
+        'Expected tournament-heavy cadence',
+        tournaments >= 8,
         `tournaments=${tournaments}`,
     );
 }
@@ -137,6 +147,9 @@ function testSaveLoadHydration(): void {
 
 function testCareerManagerTrainingFlow(): void {
     const career = createNewCareer('Flow Coach', 'Flow Team');
+    const nextPracticeWeek =
+        career.schedule.find((event) => event.type === 'practice')?.date || career.week;
+    career.week = nextPracticeWeek;
     saveCareer(career);
 
     const manager = CareerManager.load();
@@ -147,7 +160,8 @@ function testCareerManagerTrainingFlow(): void {
     const budgetBefore = manager.data.finances.budget;
     const cost = manager.data.team.roster.length * CAREER_CONSTANTS.TRAINING_COST_PER_PLAYER;
 
-    manager.conductTraining('offense');
+    const outcome = manager.conductTraining('offense');
+    assert('Training can run on scheduled practice week', outcome.ok, outcome.reason || 'ok');
 
     assert(
         'Training advances week by one',

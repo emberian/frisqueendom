@@ -77,6 +77,26 @@ export class ReplayPlayer {
         }
 
         this.eventIndex = left;
+
+        // Optimization: Find the nearest snapshot BEFORE this time and apply it
+        const snapshots = (this.data as any).snapshots;
+        if (snapshots && snapshots.length > 0) {
+            let bestSnapshot = null;
+            for (const snap of snapshots) {
+                if (snap.timestamp <= this.currentTime) {
+                    bestSnapshot = snap;
+                } else {
+                    break;
+                }
+            }
+            if (bestSnapshot) {
+                this.emitEvent({
+                    type: 'state_snapshot',
+                    timestamp: bestSnapshot.timestamp,
+                    data: bestSnapshot.state
+                });
+            }
+        }
     }
 
     /**

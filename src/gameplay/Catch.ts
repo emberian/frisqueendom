@@ -13,6 +13,7 @@ export interface CatchResult {
     catchQuality: 'perfect' | 'clean' | 'contested' | 'difficult';
     isContestedCatch?: boolean;
     isContestedDrop?: boolean;
+    dropper?: Player;
 }
 
 export interface CatchOptions {
@@ -130,10 +131,6 @@ function checkFlightCatch(
                             speed: player.movement.velocity.length(),
                         });
 
-                        // Update stats
-                        if (player.stats) {
-                            player.stats.career.blocks++; // Track layouts as defensive plays
-                        }
                     }
                 }
             }
@@ -192,18 +189,12 @@ function checkFlightCatch(
                         isLayout: closest.isLayout,
                         catchQuality: 'contested',
                         isContestedDrop: true,
+                        dropper: closest.player,
                     };
                 } else {
                     // Contested catch success
                     const isInterception =
                         disc.thrownByTeam !== null && disc.thrownByTeam !== closest.player.team;
-
-                    if (closest.player.stats) {
-                        closest.player.stats.career.completions++;
-                        if (isInterception) {
-                            closest.player.stats.career.blocks++;
-                        }
-                    }
 
                     return {
                         catcher: closest.player,
@@ -224,14 +215,6 @@ function checkFlightCatch(
 
     const isInterception =
         disc.thrownByTeam !== null && disc.thrownByTeam !== nearest.player.team;
-
-    // Update stats based on catch quality
-    if (nearest.player.stats) {
-        nearest.player.stats.career.completions++;
-        if (isInterception) {
-            nearest.player.stats.career.blocks++;
-        }
-    }
 
     return {
         catcher: nearest.player,

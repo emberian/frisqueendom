@@ -26,6 +26,7 @@ export interface GameplayInputSource {
     isPausePressed(): boolean;
     isCallingTimeout(): boolean;
     isCallingFoul(): boolean;
+    isKeyDown(code: string): boolean;
     consumeScroll(): number;
 }
 
@@ -82,9 +83,16 @@ export class InputManager implements GameplayInputSource {
 
     private readonly onKeyDown = (e: KeyboardEvent) => {
         this.keys.add(e.code);
+        // Prevent default for game-related keys to avoid browser interference (e.g. Firefox quick search)
+        if (!e.metaKey && !e.ctrlKey && e.code !== 'F12' && e.code !== 'F11' && e.code !== 'F5') {
+            e.preventDefault();
+        }
     };
     private readonly onKeyUp = (e: KeyboardEvent) => {
         this.keys.delete(e.code);
+        if (!e.metaKey && !e.ctrlKey && e.code !== 'F12' && e.code !== 'F11' && e.code !== 'F5') {
+            e.preventDefault();
+        }
     };
     private readonly onMouseMove = (e: MouseEvent) => {
         this.mousePosition.set(e.clientX, e.clientY);
@@ -102,6 +110,7 @@ export class InputManager implements GameplayInputSource {
     };
     private readonly onWheel = (e: WheelEvent) => {
         this.scrollDelta += e.deltaY;
+        e.preventDefault();
     };
     private readonly onContextMenu = (e: Event) => {
         e.preventDefault();
@@ -460,57 +469,60 @@ export class InputManager implements GameplayInputSource {
 
         const root = document.createElement('div');
         root.style.cssText =
-            'position:absolute;inset:0;pointer-events:none;z-index:42;';
+            'position:absolute;inset:0;pointer-events:none;z-index:42;user-select:none;-webkit-user-select:none;';
         ui.appendChild(root);
         this.touchUiRoot = root;
 
         const leftDock = document.createElement('div');
         leftDock.style.cssText =
-            'position:absolute;left:max(10px,env(safe-area-inset-left));bottom:max(10px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:8px;';
+            'position:absolute;left:max(20px,env(safe-area-inset-left));bottom:max(20px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:16px;';
         root.appendChild(leftDock);
 
         const joystickBase = document.createElement('div');
         joystickBase.style.cssText =
-            'width:112px;height:112px;border-radius:50%;pointer-events:auto;touch-action:none;' +
-            'border:1px solid rgba(255,255,255,0.26);background:radial-gradient(circle at 30% 30%,rgba(130,220,255,0.22),rgba(7,18,34,0.84));' +
-            'box-shadow:0 14px 24px rgba(0,0,0,0.34);position:relative;';
+            'width:128px;height:128px;border-radius:50%;pointer-events:auto;touch-action:none;' +
+            'border:2px solid rgba(255,255,255,0.2);background:radial-gradient(circle at 30% 30%,rgba(130,220,255,0.15),rgba(7,18,34,0.7));' +
+            'box-shadow:0 10px 30px rgba(0,0,0,0.5);position:relative;backdrop-filter:blur(4px);';
         leftDock.appendChild(joystickBase);
 
         const joystickLabel = document.createElement('div');
         joystickLabel.textContent = 'MOVE';
         joystickLabel.style.cssText =
-            'position:absolute;left:50%;top:8px;transform:translateX(-50%);font-family:monospace;font-size:11px;letter-spacing:0.1em;color:rgba(255,255,255,0.76);';
+            'position:absolute;left:50%;top:12px;transform:translateX(-50%);font-family:monospace;font-size:10px;font-weight:bold;letter-spacing:0.15em;color:rgba(255,255,255,0.5);';
         joystickBase.appendChild(joystickLabel);
 
         const joystickKnob = document.createElement('div');
         joystickKnob.style.cssText =
-            'width:50px;height:50px;border-radius:50%;position:absolute;left:50%;top:50%;' +
-            'transform:translate(-50%,-50%);background:linear-gradient(150deg,rgba(255,209,102,0.9),rgba(255,122,34,0.88));' +
-            'border:1px solid rgba(255,255,255,0.44);box-shadow:0 8px 16px rgba(0,0,0,0.28);';
+            'width:56px;height:56px;border-radius:50%;position:absolute;left:50%;top:50%;' +
+            'transform:translate(-50%,-50%);background:linear-gradient(145deg,rgba(255,209,102,0.95),rgba(255,122,34,0.9));' +
+            'border:1px solid rgba(255,255,255,0.6);box-shadow:0 6px 12px rgba(0,0,0,0.4),inset 0 2px 4px rgba(255,255,255,0.3);' +
+            'transition:transform 0.05s linear;';
         joystickBase.appendChild(joystickKnob);
         this.joystickKnob = joystickKnob;
 
         const sprintButton = this.createTouchButton('SPRINT');
-        sprintButton.style.width = '98px';
+        sprintButton.style.width = '110px';
+        sprintButton.style.height = '48px';
         leftDock.appendChild(sprintButton);
 
         const rightDock = document.createElement('div');
         rightDock.style.cssText =
-            'position:absolute;right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));' +
-            'display:grid;grid-template-columns:repeat(2,minmax(0,74px));gap:7px;';
+            'position:absolute;right:max(20px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));' +
+            'display:grid;grid-template-columns:repeat(2,minmax(0,84px));gap:12px;';
         root.appendChild(rightDock);
 
         const advancedPanel = document.createElement('div');
         advancedPanel.style.cssText =
-            'position:absolute;right:max(10px,env(safe-area-inset-right));' +
-            'bottom:calc(max(10px,env(safe-area-inset-bottom)) + 226px);' +
-            'display:none;grid-template-columns:repeat(2,minmax(0,74px));gap:7px;pointer-events:auto;';
+            'position:absolute;right:max(20px,env(safe-area-inset-right));' +
+            'bottom:calc(max(20px,env(safe-area-inset-bottom)) + 260px);' +
+            'display:none;grid-template-columns:repeat(2,minmax(0,84px));gap:12px;pointer-events:auto;';
         root.appendChild(advancedPanel);
 
         const throwButton = this.createTouchButton('THROW');
         throwButton.style.cssText +=
-            'grid-column:span 2;height:62px;font-size:14px;letter-spacing:0.1em;' +
-            'background:linear-gradient(155deg,rgba(255,122,34,0.95),rgba(255,77,109,0.9));';
+            'grid-column:span 2;height:72px;font-size:16px;font-weight:bold;letter-spacing:0.12em;' +
+            'background:linear-gradient(155deg,rgba(255,122,34,1.0),rgba(255,77,109,0.95));' +
+            'box-shadow:0 8px 24px rgba(255,77,109,0.4);';
         rightDock.appendChild(throwButton);
 
         const forehandButton = this.createTouchButton('FOREHAND');
@@ -526,22 +538,19 @@ export class InputManager implements GameplayInputSource {
         rightDock.appendChild(pauseButton);
 
         const toolsButton = this.createTouchButton('TOOLS');
-        toolsButton.style.cssText += 'grid-column:span 2;font-size:11px;';
+        toolsButton.style.cssText += 'grid-column:span 2;font-size:12px;opacity:0.8;';
         rightDock.appendChild(toolsButton);
 
         const specButton = this.createTouchButton('SPEC OFF');
         advancedPanel.appendChild(specButton);
 
         const releaseButton = this.createTouchButton('RELEASE N');
-        releaseButton.style.fontSize = '11px';
         advancedPanel.appendChild(releaseButton);
 
         const hyzerMinusButton = this.createTouchButton('CURVE -');
-        hyzerMinusButton.style.fontSize = '11px';
         advancedPanel.appendChild(hyzerMinusButton);
 
         const hyzerPlusButton = this.createTouchButton('CURVE +');
-        hyzerPlusButton.style.fontSize = '11px';
         advancedPanel.appendChild(hyzerPlusButton);
 
         let advancedOpen = false;
@@ -549,12 +558,15 @@ export class InputManager implements GameplayInputSource {
             advancedPanel.style.display = advancedOpen ? 'grid' : 'none';
             toolsButton.textContent = advancedOpen ? 'TOOLS ▲' : 'TOOLS ▼';
             toolsButton.style.borderColor = advancedOpen
-                ? 'rgba(255,209,102,0.9)'
-                : 'rgba(255,255,255,0.3)';
+                ? 'rgba(255,209,102,0.95)'
+                : 'rgba(255,255,255,0.2)';
         };
         toolsButton.addEventListener('click', () => {
             advancedOpen = !advancedOpen;
             syncToolsState();
+            // Pulse effect
+            toolsButton.style.transform = 'scale(0.95)';
+            setTimeout(() => toolsButton.style.transform = 'scale(1)', 100);
         });
         syncToolsState();
 
@@ -575,7 +587,12 @@ export class InputManager implements GameplayInputSource {
             const tx = nx * clamped;
             const ty = ny * clamped;
 
-            this.touchMovement.set(tx / this.joystickRadius, -(ty / this.joystickRadius));
+            // Apply small deadzone for stability
+            const deadzone = 0.08;
+            const normalizedDist = clamped / this.joystickRadius;
+            const finalMag = normalizedDist < deadzone ? 0 : (normalizedDist - deadzone) / (1 - deadzone);
+
+            this.touchMovement.set(nx * finalMag, -(ny * finalMag));
             joystickKnob.style.transform = `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
         };
 
@@ -655,6 +672,8 @@ export class InputManager implements GameplayInputSource {
 
         switchButton.addEventListener('click', () => {
             this.touchSwitchQueued = true;
+            switchButton.style.transform = 'scale(0.92)';
+            setTimeout(() => switchButton.style.transform = 'scale(1)', 100);
         });
 
         const updateSpecialButton = () => {
@@ -665,8 +684,8 @@ export class InputManager implements GameplayInputSource {
             specButton.textContent = label;
             specButton.style.borderColor =
                 this.touchSpecialThrow === 'none'
-                    ? 'rgba(255,255,255,0.3)'
-                    : 'rgba(255,209,102,0.9)';
+                    ? 'rgba(255,255,255,0.2)'
+                    : 'rgba(255,209,102,0.95)';
         };
         specButton.addEventListener('click', () => {
             if (this.touchSpecialThrow === 'none') {
@@ -679,6 +698,8 @@ export class InputManager implements GameplayInputSource {
                 this.touchSpecialThrow = 'none';
             }
             updateSpecialButton();
+            specButton.style.transform = 'scale(0.92)';
+            setTimeout(() => specButton.style.transform = 'scale(1)', 100);
         });
         updateSpecialButton();
 
@@ -692,8 +713,8 @@ export class InputManager implements GameplayInputSource {
             releaseButton.textContent = label;
             releaseButton.style.borderColor =
                 this.touchReleaseMode === 'normal'
-                    ? 'rgba(255,255,255,0.3)'
-                    : 'rgba(143,220,255,0.9)';
+                    ? 'rgba(255,255,255,0.2)'
+                    : 'rgba(143,220,255,0.95)';
         };
         releaseButton.addEventListener('click', () => {
             if (this.touchReleaseMode === 'normal') {
@@ -704,6 +725,8 @@ export class InputManager implements GameplayInputSource {
                 this.touchReleaseMode = 'normal';
             }
             updateReleaseButton();
+            releaseButton.style.transform = 'scale(0.92)';
+            setTimeout(() => releaseButton.style.transform = 'scale(1)', 100);
         });
         updateReleaseButton();
 
@@ -712,6 +735,8 @@ export class InputManager implements GameplayInputSource {
 
         pauseButton.addEventListener('click', () => {
             this.touchPauseQueued = true;
+            pauseButton.style.transform = 'scale(0.92)';
+            setTimeout(() => pauseButton.style.transform = 'scale(1)', 100);
         });
     }
 
@@ -721,11 +746,14 @@ export class InputManager implements GameplayInputSource {
         button.textContent = label;
         button.style.cssText =
             'pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;' +
-            'min-height:40px;padding:6px 8px;border-radius:11px;' +
-            'border:1px solid rgba(255,255,255,0.3);' +
-            'background:linear-gradient(150deg,rgba(7,20,35,0.9),rgba(9,30,54,0.86));' +
-            'box-shadow:0 10px 18px rgba(0,0,0,0.28);color:white;' +
-            'font-family:monospace;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;';
+            'min-height:48px;padding:8px 10px;border-radius:14px;' +
+            'border:1.5px solid rgba(255,255,255,0.2);' +
+            'background:linear-gradient(150deg,rgba(15,30,50,0.85),rgba(5,15,30,0.95));' +
+            'backdrop-filter:blur(6px);' +
+            'box-shadow:0 6px 16px rgba(0,0,0,0.4),inset 0 1px 1px rgba(255,255,255,0.1);' +
+            'color:rgba(255,255,255,0.95);' +
+            'font-family:monospace;font-size:12px;font-weight:bold;letter-spacing:0.05em;text-transform:uppercase;' +
+            'display:flex;align-items:center;justify-content:center;transition:transform 0.1s, border-color 0.1s;';
         return button;
     }
 

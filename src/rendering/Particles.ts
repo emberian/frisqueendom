@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Random } from '../data/SeededRandom';
 
 interface Particle {
     position: THREE.Vector3;
@@ -7,12 +8,14 @@ interface Particle {
     maxLife: number;
     color: THREE.Color;
     size: number;
+    active: boolean;
 }
 
-const MAX_PARTICLES = 500;
+const MAX_PARTICLES = 1000; // Increased limit for smoother visuals
 
 export class ParticleSystem {
     private particles: Particle[] = [];
+    private activeCount = 0;
     private mesh: THREE.Points;
     private positions: Float32Array;
     private colors: Float32Array;
@@ -23,6 +26,19 @@ export class ParticleSystem {
         this.positions = new Float32Array(MAX_PARTICLES * 3);
         this.colors = new Float32Array(MAX_PARTICLES * 3);
         this.sizes = new Float32Array(MAX_PARTICLES);
+
+        // Pre-allocate all particle objects in a pool
+        for (let i = 0; i < MAX_PARTICLES; i++) {
+            this.particles.push({
+                position: new THREE.Vector3(),
+                velocity: new THREE.Vector3(),
+                life: 0,
+                maxLife: 1,
+                color: new THREE.Color(),
+                size: 0,
+                active: false
+            });
+        }
 
         this.geometry = new THREE.BufferGeometry();
         this.geometry.setAttribute(
@@ -44,6 +60,8 @@ export class ParticleSystem {
             transparent: true,
             opacity: 0.8,
             sizeAttenuation: true,
+            depthWrite: false, // Better for overlapping particles
+            blending: THREE.AdditiveBlending // Punchy visuals
         });
 
         this.mesh = new THREE.Points(this.geometry, material);
@@ -59,21 +77,23 @@ export class ParticleSystem {
         life: number,
         spread: number,
     ): void {
-        const c = new THREE.Color(color);
-        for (let i = 0; i < count; i++) {
-            if (this.particles.length >= MAX_PARTICLES) break;
-            this.particles.push({
-                position: origin.clone(),
-                velocity: new THREE.Vector3(
-                    (Math.random() - 0.5) * spread,
-                    Math.random() * speed,
-                    (Math.random() - 0.5) * spread,
-                ),
-                life,
-                maxLife: life,
-                color: c.clone(),
-                size: 0.05 + Math.random() * 0.1,
-            });
+        let spawned = 0;
+        for (let i = 0; i < MAX_PARTICLES && spawned < count; i++) {
+            const p = this.particles[i];
+            if (p.active) continue;
+
+            p.active = true;
+            p.position.copy(origin);
+            p.velocity.set(
+                (Random.next() - 0.5) * spread,
+                Random.next() * speed,
+                (Random.next() - 0.5) * spread,
+            );
+            p.life = life;
+            p.maxLife = life;
+            p.color.set(color);
+            p.size = 0.05 + Random.next() * 0.1;
+            spawned++;
         }
     }
 
@@ -88,65 +108,72 @@ export class ParticleSystem {
     emitScoreCelebration(pos: THREE.Vector3): void {
         const colors = [0xff4444, 0x4444ff, 0xffff44, 0x44ff44, 0xff44ff];
         for (const c of colors) {
-            this.emit(pos, 25, c, 6, 2.5, 4);
+            this.emit(pos, 20, c, 6, 2.0, 4);
         }
     }
 
     emitRainDrop(fieldWidth: number, fieldLength: number): void {
-        if (this.particles.length >= MAX_PARTICLES) return;
+        for (let i = 0; i < MAX_PARTICLES; i++) {
+            const p = this.particles[i];
+            if (p.active) continue;
 
-        // Spawn rain particles from above field
-        const x = (Math.random() - 0.5) * fieldWidth;
-        const z = (Math.random() - 0.5) * fieldLength;
-        const y = 20 + Math.random() * 5;
+            const x = (Random.next() - 0.5) * fieldWidth;
+            const z = (Random.next() - 0.5) * fieldLength;
+            const y = 20 + Random.next() * 5;
 
-        this.particles.push({
-            position: new THREE.Vector3(x, y, z),
-            velocity: new THREE.Vector3(
-                (Math.random() - 0.5) * 0.5, // slight horizontal drift
-                -12 - Math.random() * 2, // fast downward
-                (Math.random() - 0.5) * 0.5,
-            ),
-            life: 2.0,
-            maxLife: 2.0,
-            color: new THREE.Color(0x9999bb),
-            size: 0.03 + Math.random() * 0.02,
-        });
+            p.active = true;
+            p.position.set(x, y, z);
+            p.velocity.set(
+                (Random.next() - 0.5) * 0.5,
+                -12 - Random.next() * 2,
+                (Random.next() - 0.5) * 0.5,
+            );
+            p.life = 2.0;
+            p.maxLife = 2.0;
+            p.color.set(0x9999bb);
+            p.size = 0.03 + Random.next() * 0.02;
+            return;
+        }
     }
 
     emitWindDust(origin: THREE.Vector3, windDir: THREE.Vector2, windSpeed: number): void {
-        if (this.particles.length >= MAX_PARTICLES - 5) return;
+        let spawned = 0;
+        for (let i = 0; i < MAX_PARTICLES && spawned < 3; i++) {
+            const p = this.particles[i];
+            if (p.active) continue;
 
-        // Small dust/pollen particles carried by wind
-        const count = 3;
-        for (let i = 0; i < count; i++) {
-            this.particles.push({
-                position: origin.clone().add(
-                    new THREE.Vector3(
-                        (Math.random() - 0.5) * 0.5,
-                        Math.random() * 0.3,
-                        (Math.random() - 0.5) * 0.5,
-                    ),
+            p.active = true;
+            p.position.copy(origin).add(
+                _tempDust.set(
+                    (Random.next() - 0.5) * 0.5,
+                    Random.next() * 0.3,
+                    (Random.next() - 0.5) * 0.5,
                 ),
-                velocity: new THREE.Vector3(
-                    windDir.x * windSpeed * 0.5 + (Math.random() - 0.5) * 0.3,
-                    0.2 + Math.random() * 0.3,
-                    windDir.y * windSpeed * 0.5 + (Math.random() - 0.5) * 0.3,
-                ),
-                life: 1.5 + Math.random() * 0.5,
-                maxLife: 2.0,
-                color: new THREE.Color(0xccbb99),
-                size: 0.02 + Math.random() * 0.01,
-            });
+            );
+            p.velocity.set(
+                windDir.x * windSpeed * 0.5 + (Random.next() - 0.5) * 0.3,
+                0.2 + Random.next() * 0.3,
+                windDir.y * windSpeed * 0.5 + (Random.next() - 0.5) * 0.3,
+            );
+            p.life = 1.5 + Random.next() * 0.5;
+            p.maxLife = 2.0;
+            p.color.set(0xccbb99);
+            p.size = 0.02 + Random.next() * 0.01;
+            spawned++;
         }
     }
 
     update(dt: number): void {
-        let alive = 0;
-        for (let i = 0; i < this.particles.length; i++) {
+        let liveCount = 0;
+        for (let i = 0; i < MAX_PARTICLES; i++) {
             const p = this.particles[i];
+            if (!p.active) continue;
+
             p.life -= dt;
-            if (p.life <= 0) continue;
+            if (p.life <= 0) {
+                p.active = false;
+                continue;
+            }
 
             // Gravity
             p.velocity.y -= 9.81 * dt;
@@ -160,22 +187,22 @@ export class ParticleSystem {
 
             const alpha = p.life / p.maxLife;
 
-            this.positions[alive * 3] = p.position.x;
-            this.positions[alive * 3 + 1] = p.position.y;
-            this.positions[alive * 3 + 2] = p.position.z;
-            this.colors[alive * 3] = p.color.r * alpha;
-            this.colors[alive * 3 + 1] = p.color.g * alpha;
-            this.colors[alive * 3 + 2] = p.color.b * alpha;
-            this.sizes[alive] = p.size * alpha;
+            this.positions[liveCount * 3] = p.position.x;
+            this.positions[liveCount * 3 + 1] = p.position.y;
+            this.positions[liveCount * 3 + 2] = p.position.z;
+            this.colors[liveCount * 3] = p.color.r * alpha;
+            this.colors[liveCount * 3 + 1] = p.color.g * alpha;
+            this.colors[liveCount * 3 + 2] = p.color.b * alpha;
+            this.sizes[liveCount] = p.size * alpha;
 
-            this.particles[alive] = p;
-            alive++;
+            liveCount++;
         }
 
-        this.particles.length = alive;
         this.geometry.attributes.position.needsUpdate = true;
         this.geometry.attributes.color.needsUpdate = true;
         this.geometry.attributes.size.needsUpdate = true;
-        this.geometry.setDrawRange(0, alive);
+        this.geometry.setDrawRange(0, liveCount);
     }
 }
+
+const _tempDust = new THREE.Vector3();

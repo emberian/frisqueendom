@@ -22,6 +22,9 @@ export class PlayerSwitching {
     }
 
     switchTo(player: Player): void {
+        if (this.controlledPlayer) {
+            this.controlledPlayer.stickman.setAccent(null);
+        }
         this.clearControl();
         this.controlledPlayer = player;
         player.isControlled = true;

@@ -1,4 +1,5 @@
 import type { ThrowParams, MatchPhase, TeamSide } from '../data/Types';
+import type { FullMatchState } from '../network/protocol';
 
 /**
  * Types of events that can be recorded in a replay
@@ -11,7 +12,8 @@ export type ReplayEventType =
     | 'disc_turnover'
     | 'disc_score'
     | 'match_start'
-    | 'match_end';
+    | 'match_end'
+    | 'state_snapshot';
 
 /**
  * Base event interface with timestamp
@@ -93,6 +95,7 @@ export interface ReplayData {
     version: string; // replay format version
     matchSeed: number; // random seed for deterministic AI
     events: ReplayEvent[];
+    snapshots: { timestamp: number; state: FullMatchState }[];
     teamNames: { home: string; away: string };
     matchSettings: MatchSettings;
     recordedAt: string; // ISO timestamp
@@ -111,10 +114,84 @@ export interface ReplayMetadata {
 }
 
 /**
+ * Highlight snippet from a replay
+ */
+export interface Highlight {
+    type: 'goal' | 'block' | 'long_throw';
+    startTime: number;
+    endTime: number;
+    description: string;
+    team: TeamSide;
+}
+
+/**
+ * Extracts highlights from replay data
+ */
+export function extractHighlights(data: ReplayData): Highlight[] {
+    const highlights: Highlight[] = [];
+    const events = data.events;
+
+    for (let i = 0; i < events.length; i++) {
+        const event = events[i];
+
+        if (event.type === 'disc_score') {
+            const scoreData = event.data as DiscScoreEventData;
+            highlights.push({
+                type: 'goal',
+                startTime: Math.max(0, event.timestamp - 6),
+                endTime: event.timestamp + 2,
+                description: `GOAL! ${scoreData.scorerId}`,
+                team: scoreData.team,
+            });
+        } else if (event.type === 'disc_turnover') {
+            const turnoverData = event.data as DiscTurnoverEventData;
+            if (turnoverData.reason === 'block') {
+                highlights.push({
+                    type: 'block',
+                    startTime: Math.max(0, event.timestamp - 3),
+                    endTime: event.timestamp + 1.5,
+                    description: 'DENIED! GREAT BLOCK',
+                    team: 'home', 
+                });
+            }
+        } else if (event.type === 'disc_throw') {
+            const throwData = event.data as DiscThrowEventData;
+            // Check if this throw was caught way downfield
+            for (let j = i + 1; j < Math.min(i + 50, events.length); j++) {
+                const next = events[j];
+                if (next.type === 'disc_catch') {
+                    const catchData = next.data as DiscCatchEventData;
+                    const dx = catchData.position.x - throwData.throwParams.position.x;
+                    const dz = catchData.position.z - throwData.throwParams.position.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    if (dist > 25) {
+                        highlights.push({
+                            type: 'long_throw',
+                            startTime: Math.max(0, event.timestamp - 1),
+                            endTime: next.timestamp + 1,
+                            description: `BIG HUCK! (${Math.round(dist)}m)`,
+                            team: throwData.team,
+                        });
+                    }
+                    break;
+                }
+                if (next.type === 'disc_turnover' || next.type === 'disc_score') break;
+            }
+        }
+    }
+
+    // Sort by timestamp and remove overlaps
+    highlights.sort((a, b) => a.startTime - b.startTime);
+    
+    return highlights;
+}
+
+/**
  * ReplayRecorder captures game events for later playback
  */
 export class ReplayRecorder {
     private events: ReplayEvent[] = [];
+    private snapshots: { timestamp: number; state: FullMatchState }[] = [];
     private startTime: number = 0;
     private isRecording: boolean = false;
     private matchSeed: number = 0;
@@ -130,6 +207,7 @@ export class ReplayRecorder {
      */
     start(seed: number, teamNames: { home: string; away: string }, settings: MatchSettings): void {
         this.events = [];
+        this.snapshots = [];
         this.startTime = performance.now();
         this.isRecording = true;
         this.matchSeed = seed;
@@ -144,12 +222,28 @@ export class ReplayRecorder {
     }
 
     /**
+     * Record a full state snapshot for seeking
+     */
+    recordSnapshot(state: FullMatchState): void {
+        if (!this.isRecording) return;
+        const timestamp = (performance.now() - this.startTime) / 1000;
+        const copy = JSON.parse(JSON.stringify(state)); // Deep copy
+        this.snapshots.push({
+            timestamp,
+            state: copy,
+        });
+        // Also record as event for simple playback synchronization
+        this.recordEvent('state_snapshot', copy);
+    }
+
+    /**
      * Stop recording
      */
     stop(): void {
         if (this.isRecording) {
             this.recordEvent('match_end', {
                 finalEventCount: this.events.length,
+                snapshotCount: this.snapshots.length,
             });
             this.isRecording = false;
         }
@@ -258,9 +352,10 @@ export class ReplayRecorder {
             : 0;
 
         return {
-            version: '1.0.0',
+            version: '1.1.0',
             matchSeed: this.matchSeed,
             events: [...this.events],
+            snapshots: [...this.snapshots],
             teamNames: { ...this.teamNames },
             matchSettings: { ...this.matchSettings },
             recordedAt: new Date().toISOString(),

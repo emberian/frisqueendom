@@ -1,37 +1,43 @@
 import * as THREE from 'three';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 
-const TRAIL_LENGTH = 30;
+const TRAIL_LENGTH = 40;
 
 export class DiscTrail {
-    private line: THREE.Line;
-    private geometry: THREE.BufferGeometry;
-    private positions: Float32Array;
-    private colors: Float32Array;
+    private line: Line2;
+    private geometry: LineGeometry;
+    private material: LineMaterial;
     private head = 0;
     private count = 0;
     private trail: THREE.Vector3[] = [];
-    private teamR = 0.53;
-    private teamG = 0.8;
-    private teamB = 1.0;
+    private positions: number[] = [];
+    private colors: number[] = [];
+    private teamColor = new THREE.Color(0x8fdcff);
+    private overrideColor: THREE.Color | null = null;
 
     constructor(scene: THREE.Scene) {
         for (let i = 0; i < TRAIL_LENGTH; i++) {
             this.trail.push(new THREE.Vector3());
         }
 
-        this.positions = new Float32Array(TRAIL_LENGTH * 3);
-        this.colors = new Float32Array(TRAIL_LENGTH * 4);
+        this.positions = new Array(TRAIL_LENGTH * 3).fill(0);
+        this.colors = new Array(TRAIL_LENGTH * 3).fill(1);
 
-        this.geometry = new THREE.BufferGeometry();
-        this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
-        this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 4));
-
-        const material = new THREE.LineBasicMaterial({
+        this.geometry = new LineGeometry();
+        
+        this.material = new LineMaterial({
             vertexColors: true,
             transparent: true,
+            linewidth: 0.08,
+            worldUnits: true,
+            opacity: 0.8,
+            alphaToCoverage: true
         });
+        this.material.resolution.set(window.innerWidth, window.innerHeight);
 
-        this.line = new THREE.Line(this.geometry, material);
+        this.line = new Line2(this.geometry, this.material);
         this.line.visible = false;
         this.line.frustumCulled = false;
         scene.add(this.line);
@@ -42,6 +48,8 @@ export class DiscTrail {
         this.head = (this.head + 1) % TRAIL_LENGTH;
         if (this.count < TRAIL_LENGTH) this.count++;
 
+        if (this.count < 2) return;
+
         // Rebuild buffer from newest to oldest
         for (let i = 0; i < this.count; i++) {
             const idx = (this.head - 1 - i + TRAIL_LENGTH) % TRAIL_LENGTH;
@@ -51,28 +59,41 @@ export class DiscTrail {
             this.positions[i * 3 + 2] = p.z;
 
             const alpha = 1 - i / this.count;
-            // Team-colored trail, brightening toward white at newest point
-            this.colors[i * 4] = this.teamR + (1 - this.teamR) * alpha;
-            this.colors[i * 4 + 1] = this.teamG + (1 - this.teamG) * alpha;
-            this.colors[i * 4 + 2] = this.teamB + (1 - this.teamB) * alpha;
-            this.colors[i * 4 + 3] = alpha;
+            const base = this.overrideColor || this.teamColor;
+
+            // Gradient from team color to white at the head
+            this.colors[i * 3] = base.r + (1 - base.r) * alpha * 0.5;
+            this.colors[i * 3 + 1] = base.g + (1 - base.g) * alpha * 0.5;
+            this.colors[i * 3 + 2] = base.b + (1 - base.b) * alpha * 0.5;
         }
 
-        this.geometry.attributes.position.needsUpdate = true;
-        this.geometry.attributes.color.needsUpdate = true;
-        this.geometry.setDrawRange(0, this.count);
-        this.line.visible = this.count > 1;
+        // LineGeometry expects full arrays
+        this.geometry.setPositions(this.positions.slice(0, this.count * 3));
+        this.geometry.setColors(this.colors.slice(0, this.count * 3));
+        
+        this.line.visible = true;
+        this.line.computeLineDistances();
     }
 
     setTeamColor(hex: number): void {
-        this.teamR = ((hex >> 16) & 0xff) / 255;
-        this.teamG = ((hex >> 8) & 0xff) / 255;
-        this.teamB = (hex & 0xff) / 255;
+        this.teamColor.setHex(hex);
+    }
+
+    setOverrideColor(hex: string | null): void {
+        if (!hex) {
+            this.overrideColor = null;
+        } else {
+            this.overrideColor = new THREE.Color(hex);
+        }
     }
 
     clear(): void {
         this.head = 0;
         this.count = 0;
         this.line.visible = false;
+    }
+
+    handleResize(width: number, height: number): void {
+        this.material.resolution.set(width, height);
     }
 }

@@ -4,6 +4,7 @@ import { THROW_CONFIGS, calculateThrowPower, QUICK_RELEASE_WINDOW } from '../dat
 import type { ThrowParams } from '../data/Types';
 import type { Player } from '../entities/Player';
 import type { GameCamera } from '../rendering/Camera';
+import { Random } from '../data/SeededRandom';
 
 export type ThrowType = 'backhand' | 'forehand' | 'hammer' | 'scoober' | 'thumber' | 'blade';
 export type ReleaseHeight = 'low' | 'normal' | 'high';
@@ -112,7 +113,7 @@ export class ThrowController {
             const power = this.power;
             
             // Check for fake (very short hold)
-            if (this.holdTime < 0.15) {
+            if (this.holdTime < 0.22) {
                 this.triggerFake();
                 this.holdTime = 0;
                 return null;
@@ -231,8 +232,8 @@ export class ThrowController {
             
             // Apply accuracy variance
             const variance = (1 - accuracy) * 0.1;
-            this.aimDirection.x += (Math.random() - 0.5) * variance;
-            this.aimDirection.y += (Math.random() - 0.5) * variance;
+            this.aimDirection.x += (Random.next() - 0.5) * variance;
+            this.aimDirection.y += (Random.next() - 0.5) * variance;
             this.aimDirection.normalize();
             
             // Update stamina
@@ -302,10 +303,10 @@ export function selectAIThrowType(
             const hammerSkill = stats.getEffectiveStat('backhand'); // Hammers use backhand
             const forehandSkill = stats.getEffectiveStat('forehand');
             
-            if (hammerSkill > 60 && Math.random() < 0.5) {
+            if (hammerSkill > 60 && Random.next() < 0.5) {
                 return 'hammer';
             }
-            if (forehandSkill > 60 && Math.random() < 0.3) {
+            if (forehandSkill > 60 && Random.next() < 0.3) {
                 return 'scoober';
             }
         }
@@ -313,7 +314,7 @@ export function selectAIThrowType(
     
     // Blade for quick dumps over mark
     if (hasMark && distance < 10) {
-        if (stats && stats.getEffectiveStat('throwPower') > 70 && Math.random() < 0.2) {
+        if (stats && stats.getEffectiveStat('throwPower') > 70 && Random.next() < 0.2) {
             return 'blade';
         }
     }

@@ -3,6 +3,7 @@ import {
     type DailyChallengeState,
     type DailyChallengeMetric,
 } from './SaveLoad';
+import { Random } from './SeededRandom';
 
 export interface ChallengeDefinition {
     id: string;
@@ -63,6 +64,14 @@ export const DAILY_CHALLENGE_POOL: ChallengeDefinition[] = [
 
 export const UNLOCKABLES: Unlockable[] = [
     {
+        id: 'trail_green',
+        type: 'trail',
+        name: 'Neon Green Trail',
+        levelRequired: 1,
+        description: 'A vibrant green trail.',
+        assetKey: '#39d67d',
+    },
+    {
         id: 'trail_neon_blue',
         type: 'trail',
         name: 'Neon Blue Trail',
@@ -81,9 +90,9 @@ export const UNLOCKABLES: Unlockable[] = [
     {
         id: 'accent_gold',
         type: 'cosmetic',
-        name: 'Gold Jersey Trim',
+        name: 'Gold Halo',
         levelRequired: 5,
-        description: 'Shiny gold trim for your team.',
+        description: 'A shiny gold halo for your players.',
         assetKey: '#ffd700',
     },
     {
@@ -114,7 +123,7 @@ export function getXpProgress(xp: number): number {
 
 export function generateDailyChallenges(): DailyChallengeState[] {
     // Pick 3 random challenges
-    const shuffled = [...DAILY_CHALLENGE_POOL].sort(() => Math.random() - 0.5);
+    const shuffled = [...DAILY_CHALLENGE_POOL].sort(() => Random.next() - 0.5);
     const selected = shuffled.slice(0, 3);
     
     return selected.map(def => ({

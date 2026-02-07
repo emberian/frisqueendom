@@ -4,6 +4,7 @@ import { createDiscMesh, updateDiscMesh } from '../rendering/DiscRenderer';
 import type { DiscLifecycle, ThrowParams } from '../data/Types';
 import type { DiscSimulator } from '../../frisque-physics/pkg/frisque_physics.js';
 import type { Player } from './Player';
+import { Random } from '../data/SeededRandom';
 
 export class Disc {
     state: DiscLifecycle = 'on_ground';
@@ -102,7 +103,7 @@ export class Disc {
             // Cartwheel: roll on edge for 1-2 seconds
             this.state = 'on_ground';
             this.isRolling = true;
-            this.rollTimer = 1.0 + Math.random(); // 1-2 seconds
+            this.rollTimer = 1.0 + Random.next(); // 1-2 seconds
             this.velocity.y = 0;
         } else {
             // Flat landing: stop immediately

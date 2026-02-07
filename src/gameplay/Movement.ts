@@ -65,12 +65,15 @@ export class MovementController {
                 1 - Math.exp(-10 * dt),
             );
         } else {
-            const speed = this.velocity.length();
-            if (speed > 0.01) {
+            const speedSq = this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z;
+            if (speedSq > 0.0001) {
+                const speed = Math.sqrt(speedSq);
                 const decel = this.deceleration * dt;
                 const newSpeed = Math.max(0, speed - decel);
                 if (newSpeed > 0) {
-                    this.velocity.normalize().multiplyScalar(newSpeed);
+                    const factor = newSpeed / speed;
+                    this.velocity.x *= factor;
+                    this.velocity.z *= factor;
                 } else {
                     this.velocity.set(0, 0, 0);
                 }
@@ -80,9 +83,11 @@ export class MovementController {
         }
 
         // Clamp speed
-        const speed = this.velocity.length();
-        if (speed > maxSpeed) {
-            this.velocity.normalize().multiplyScalar(maxSpeed);
+        const currentSpeedSq = this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z;
+        if (currentSpeedSq > maxSpeed * maxSpeed) {
+            const currentSpeed = Math.sqrt(currentSpeedSq);
+            this.velocity.x = (this.velocity.x / currentSpeed) * maxSpeed;
+            this.velocity.z = (this.velocity.z / currentSpeed) * maxSpeed;
         }
 
         // Integrate position
@@ -90,12 +95,13 @@ export class MovementController {
         this.position.z += this.velocity.z * dt;
 
         // Stamina
+        const finalSpeedSq = this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z;
         if (this._isSprinting) {
             this.stamina = Math.max(
                 0,
                 this.stamina - STAMINA_SPRINT_DRAIN * dt,
             );
-        } else if (speed > 0.5) {
+        } else if (finalSpeedSq > 0.25) { // speed > 0.5
             this.stamina = Math.min(
                 STAMINA_MAX,
                 this.stamina + STAMINA_JOG_REGEN * dt,

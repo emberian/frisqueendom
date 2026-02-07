@@ -18,13 +18,14 @@ export class SkySystem {
         this.ambientLight = ambientLight;
 
         // Sky dome
-        const skyGeo = new THREE.SphereGeometry(200, 32, 32);
+        const skyGeo = new THREE.SphereGeometry(250, 32, 32);
         this.skyMat = new THREE.ShaderMaterial({
             side: THREE.BackSide,
             uniforms: {
                 topColor: { value: new THREE.Color(0x4a90d9) },
                 horizonColor: { value: new THREE.Color(0x87ceeb) },
                 bottomColor: { value: new THREE.Color(0xf5e6c8) },
+                sunDir: { value: new THREE.Vector3(0, 1, 0) }
             },
             vertexShader: `
                 varying vec3 vWorldPosition;
@@ -38,15 +39,26 @@ export class SkySystem {
                 uniform vec3 topColor;
                 uniform vec3 horizonColor;
                 uniform vec3 bottomColor;
+                uniform vec3 sunDir;
                 varying vec3 vWorldPosition;
                 void main() {
-                    float h = normalize(vWorldPosition).y;
+                    vec3 dir = normalize(vWorldPosition);
+                    float h = dir.y;
                     vec3 color;
+                    
                     if (h > 0.0) {
-                        color = mix(horizonColor, topColor, pow(h, 0.5));
+                        float zenithMix = pow(h, 0.6);
+                        color = mix(horizonColor, topColor, zenithMix);
+                        
+                        // Sun halo
+                        float sunGlow = pow(max(0.0, dot(dir, normalize(sunDir))), 120.0);
+                        color += vec3(1.0, 0.9, 0.7) * sunGlow * 0.8;
                     } else {
                         color = mix(horizonColor, bottomColor, pow(-h, 0.5));
                     }
+                    
+                    color = mix(color, vec3(1.0), clamp(0.02 / (abs(h) + 0.01), 0.0, 0.15));
+                    
                     gl_FragColor = vec4(color, 1.0);
                 }
             `,
@@ -88,6 +100,7 @@ export class SkySystem {
         this.skyMat.uniforms.topColor.value.setHex(config.topColor);
         this.skyMat.uniforms.horizonColor.value.setHex(config.horizonColor);
         this.skyMat.uniforms.bottomColor.value.setHex(config.bottomColor);
+        this.skyMat.uniforms.sunDir.value.copy(config.sunPosition).normalize();
 
         // Update sun sprite position and visibility
         this.sunSprite.position.set(

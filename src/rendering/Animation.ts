@@ -8,14 +8,17 @@
 export const JOINT_COUNT = 13;
 const FLOATS_PER_POSE = JOINT_COUNT * 3;
 
+// Optimization: Pre-allocate static buffers for pose generation to avoid per-frame GC
+const POSE_BUFFER = new Float32Array(FLOATS_PER_POSE);
+const LERP_BUFFER = new Float32Array(FLOATS_PER_POSE);
+
 /** Linearly interpolate between two poses. t=0 returns a, t=1 returns b. */
 export function lerpPose(a: Float32Array, b: Float32Array, t: number): Float32Array {
-    const out = new Float32Array(FLOATS_PER_POSE);
     const s = 1 - t;
     for (let i = 0; i < FLOATS_PER_POSE; i++) {
-        out[i] = a[i] * s + b[i] * t;
+        LERP_BUFFER[i] = a[i] * s + b[i] * t;
     }
-    return out;
+    return LERP_BUFFER;
 }
 
 const P = {
@@ -46,7 +49,7 @@ function setJoint(
 }
 
 export function idlePose(time: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     const breathe = Math.sin(time * 2.1) * 0.01;
     const sway = Math.sin(time * 0.7) * 0.02;
     const headTurn = Math.sin(time * 0.2) * 0.05;
@@ -69,7 +72,7 @@ export function idlePose(time: number): Float32Array {
 }
 
 export function runPose(speed: number, phase: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     const cycle = phase * Math.PI * 2;
 
     const speedFactor = Math.min(speed / 7.0, 1.0);
@@ -170,7 +173,7 @@ export function runPose(speed: number, phase: number): Float32Array {
 }
 
 export function sprintPose(speed: number, phase: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     const cycle = phase * Math.PI * 2;
 
     const speedFactor = Math.min(speed / 9.0, 1.0);
@@ -279,7 +282,7 @@ export function backhandThrowPose(
     phase: number,
     _power: number,
 ): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
 
     // Simplified throw animation in 3 phases
     let torsoRot: number;
@@ -329,7 +332,7 @@ export function forehandThrowPose(
     phase: number,
     _power: number,
 ): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
 
     let armSide: number;
     if (phase < 0.2) {
@@ -373,7 +376,7 @@ export function forehandThrowPose(
 }
 
 export function catchPose(discDirX: number, discDirZ: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     const reach = 0.3;
 
     setJoint(out, 0, 0, P.headY, 0);
@@ -418,7 +421,7 @@ export function catchPose(discDirX: number, discDirZ: number): Float32Array {
 }
 
 export function markingPose(time: number, intensity: number = 0): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     // intensity 0-1 scales with stall count (stallCount/10)
     const shuffleSpeed = 4 + intensity * 6;
     const shuffleAmp = 0.05 + intensity * 0.1;
@@ -447,7 +450,7 @@ export function markingPose(time: number, intensity: number = 0): Float32Array {
 }
 
 export function celebrationPose(time: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     const pump = Math.sin(time * 6) * 0.15;
     const jump = Math.max(0, Math.sin(time * 4)) * 0.1;
 
@@ -488,7 +491,7 @@ export function throwingPose(
 
 // Layout/diving pose - progress from 0 (start) to 1 (landed)
 export function layoutPose(progress: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     
     // Layout arc: dive forward then land
     const diveHeight = Math.sin(progress * Math.PI) * 0.5;
@@ -519,7 +522,7 @@ export function layoutPose(progress: number): Float32Array {
 
 // Frustration/drop pose
 export function frustrationPose(time: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     
     // Shoulders slump, head down, hands on hips or gesturing
     const slump = 0.15;
@@ -544,7 +547,7 @@ export function frustrationPose(time: number): Float32Array {
 
 // Hammer throw (overhead backhand)
 function hammerThrowPose(time: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     
     let armHeight: number;
     let armExtend: number;
@@ -585,7 +588,7 @@ function hammerThrowPose(time: number): Float32Array {
 
 /** Celebration: fist pump — one arm overhead pumping, other on hip */
 export function celebrationFistPump(time: number): Float32Array {
-    const out = new Float32Array(FLOATS_PER_POSE);
+    const out = POSE_BUFFER;
     const pump = Math.sin(time * 5) * 0.12;
     const jump = Math.max(0, Math.sin(time * 3.5)) * 0.06;
 
@@ -610,7 +613,7 @@ export function celebrationFistPump(time: number): Float32Array {
 
 /** Celebration: disc spike — arm slams down, jump back, both arms raised */
 export function celebrationSpike(time: number): Float32Array {
-    const out = new Float32Array(FLOATS_PER_POSE);
+    const out = POSE_BUFFER;
 
     // Phase 1 (0-0.4s): slam arm down; Phase 2 (0.4+): both arms up, jumping
     if (time < 0.4) {
@@ -653,7 +656,7 @@ export function celebrationSpike(time: number): Float32Array {
 
 /** Frustration: "what?!" — both arms up in disbelief, head tilted back */
 export function frustrationArmsUp(time: number): Float32Array {
-    const out = new Float32Array(FLOATS_PER_POSE);
+    const out = POSE_BUFFER;
     const armDrop = Math.min(1, time * 0.8) * 0.15; // arms slowly drop
     const headShake = Math.sin(time * 8) * 0.04 * Math.exp(-time * 1.5);
 
@@ -676,7 +679,7 @@ export function frustrationArmsUp(time: number): Float32Array {
 
 /** Frustration: head drop — shoulders slumped, head hanging, slow trudge */
 export function frustrationHeadDrop(time: number): Float32Array {
-    const out = new Float32Array(FLOATS_PER_POSE);
+    const out = POSE_BUFFER;
     const slump = 0.2;
     const walkPhase = Math.sin(time * 1.5) * 0.03; // very slow shuffle
 
@@ -697,9 +700,77 @@ export function frustrationHeadDrop(time: number): Float32Array {
     return out;
 }
 
+/** Celebration: backflip — full 360 rotation in mid-air */
+export function celebrationBackflip(time: number): Float32Array {
+    const out = POSE_BUFFER;
+    
+    // Phase 1 (0-0.3): crouch; Phase 2 (0.3-0.8): flip; Phase 3 (0.8+): land
+    if (time < 0.3) {
+        const t = time / 0.3;
+        const crouch = t * 0.25;
+        setJoint(out, 0, 0, P.headY - crouch, 0.05 * t);
+        setJoint(out, 1, 0, P.neckY - crouch, 0.03 * t);
+        setJoint(out, 2, -P.shoulderX, P.shoulderY - crouch, -0.1 * t);
+        setJoint(out, 3, -P.elbowX - 0.1 * t, P.elbowY - crouch, -0.2 * t);
+        setJoint(out, 4, -P.wristX, P.wristY - crouch, -0.3 * t);
+        setJoint(out, 5, P.shoulderX, P.shoulderY - crouch, -0.1 * t);
+        setJoint(out, 6, P.elbowX + 0.1 * t, P.elbowY - crouch, -0.2 * t);
+        setJoint(out, 7, P.wristX, P.wristY - crouch, -0.3 * t);
+        setJoint(out, 8, 0, -crouch, 0);
+        setJoint(out, 9, -P.kneeX, P.kneeY + 0.2 * t, 0.1 * t);
+        setJoint(out, 10, -P.ankleX, P.ankleY + 0.1 * t, 0);
+        setJoint(out, 11, P.kneeX, P.kneeY + 0.2 * t, 0.1 * t);
+        setJoint(out, 12, P.ankleX, P.ankleY + 0.1 * t, 0);
+    } else if (time < 0.9) {
+        const t = (time - 0.3) / 0.6;
+        const angle = t * Math.PI * 2;
+        const height = Math.sin(t * Math.PI) * 1.2;
+        const tuck = Math.sin(t * Math.PI) * 0.4;
+        
+        // We simulate rotation by rotating the joints around waist
+        const cos = Math.cos(-angle);
+        const sin = Math.sin(-angle);
+        
+        const rotateY = (y: number, z: number) => y * cos - z * sin;
+        const rotateZ = (y: number, z: number) => y * sin + z * cos;
+
+        setJoint(out, 0, 0, height + rotateY(P.headY, 0.1), rotateZ(P.headY, 0.1));
+        setJoint(out, 1, 0, height + rotateY(P.neckY, 0.05), rotateZ(P.neckY, 0.05));
+        setJoint(out, 2, -P.shoulderX, height + rotateY(P.shoulderY, 0), rotateZ(P.shoulderY, 0));
+        setJoint(out, 3, -P.elbowX - tuck, height + rotateY(P.elbowY, -tuck), rotateZ(P.elbowY, -tuck));
+        setJoint(out, 4, -P.wristX - tuck, height + rotateY(P.wristY, -tuck * 1.5), rotateZ(P.wristY, -tuck * 1.5));
+        setJoint(out, 5, P.shoulderX, height + rotateY(P.shoulderY, 0), rotateZ(P.shoulderY, 0));
+        setJoint(out, 6, P.elbowX + tuck, height + rotateY(P.elbowY, -tuck), rotateZ(P.elbowY, -tuck));
+        setJoint(out, 7, P.wristX + tuck, height + rotateY(P.wristY, -tuck * 1.5), rotateZ(P.wristY, -tuck * 1.5));
+        setJoint(out, 8, 0, height, 0);
+        setJoint(out, 9, -P.kneeX, height + rotateY(P.kneeY + tuck, tuck), rotateZ(P.kneeY + tuck, tuck));
+        setJoint(out, 10, -P.ankleX, height + rotateY(P.ankleY + tuck * 2, tuck * 2), rotateZ(P.ankleY + tuck * 2, tuck * 2));
+        setJoint(out, 11, P.kneeX, height + rotateY(P.kneeY + tuck, tuck), rotateZ(P.kneeY + tuck, tuck));
+        setJoint(out, 12, P.ankleX, height + rotateY(P.ankleY + tuck * 2, tuck * 2), rotateZ(P.ankleY + tuck * 2, tuck * 2));
+    } else {
+        const t = Math.min(1, (time - 0.9) / 0.4);
+        const landCrouch = (1 - t) * 0.3;
+        setJoint(out, 0, 0, P.headY - landCrouch, 0.1 * (1 - t));
+        setJoint(out, 1, 0, P.neckY - landCrouch, 0.05 * (1 - t));
+        setJoint(out, 2, -P.shoulderX, P.shoulderY - landCrouch, 0);
+        setJoint(out, 3, -P.elbowX, P.elbowY - landCrouch + 0.2 * (1 - t), 0.2 * (1 - t));
+        setJoint(out, 4, -P.wristX, P.wristY - landCrouch + 0.4 * (1 - t), 0.3 * (1 - t));
+        setJoint(out, 5, P.shoulderX, P.shoulderY - landCrouch, 0);
+        setJoint(out, 6, P.elbowX, P.elbowY - landCrouch + 0.2 * (1 - t), 0.2 * (1 - t));
+        setJoint(out, 7, P.wristX, P.wristY - landCrouch + 0.4 * (1 - t), 0.3 * (1 - t));
+        setJoint(out, 8, 0, -landCrouch, 0);
+        setJoint(out, 9, -P.kneeX, P.kneeY + landCrouch, 0.1 * (1 - t));
+        setJoint(out, 10, -P.ankleX, P.ankleY, 0);
+        setJoint(out, 11, P.kneeX, P.kneeY + landCrouch, 0.1 * (1 - t));
+        setJoint(out, 12, P.ankleX, P.ankleY, 0);
+    }
+
+    return out;
+}
+
 // Scoober throw (overhead forehand)
 function scooberThrowPose(time: number): Float32Array {
-    const out = new Float32Array(JOINT_COUNT * 3);
+    const out = POSE_BUFFER;
     
     let armHeight: number;
     let armSide: number;
@@ -736,4 +807,20 @@ function scooberThrowPose(time: number): Float32Array {
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
     
     return out;
+}
+
+export function getPose(name: string, time: number): Float32Array {
+    switch (name) {
+        case 'run': return runPose(6, time % 1.0);
+        case 'sprint': return sprintPose(9, time % 1.0);
+        case 'throw': return throwingPose(time, 'backhand');
+        case 'layout': return layoutPose(time);
+        case 'celebrate': return celebrationPose(time);
+        case 'frustrated': return frustrationPose(time);
+        case 'marking': return markingPose(time, 0.5);
+        case 'holding_disc': return holdingDiscIdlePose(time);
+        case 'idle':
+        default:
+            return idlePose(time);
+    }
 }

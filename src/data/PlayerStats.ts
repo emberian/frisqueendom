@@ -2,6 +2,7 @@
 
 import { CAREER_CONSTANTS } from './CareerConstants';
 import { STAT_MODIFIERS } from './GameplayConstants';
+import { Random } from './SeededRandom';
 
 export interface PlayerAttributes {
     // Physical
@@ -105,7 +106,7 @@ export class PlayerStats {
             ...traits,
         };
         this.appearance = {
-            jerseyNumber: Math.floor(Math.random() * 99) + 1,
+            jerseyNumber: Math.floor(Random.next() * 99) + 1,
             skinTone: 0xcc9977,
             hairStyle: 'short',
             hairColor: 0x332211,
@@ -187,7 +188,7 @@ export class PlayerStats {
         
         if (age < peak) {
             // Still developing
-            this.development.potential += Math.random() * 2;
+            this.development.potential += Random.next() * 2;
         } else if (age > peak + 3) {
             // Declining
             const decline = this.development.declineRate * (age - peak - 3) * 0.5;
@@ -200,7 +201,7 @@ export class PlayerStats {
     // Reset for new match
     resetForMatch(): void {
         this.currentStamina = this.attributes.stamina;
-        this.form += (Math.random() - 0.5) * 10; // Random form fluctuation
+        this.form += (Random.next() - 0.5) * 10; // Random form fluctuation
         this.form = Math.max(-20, Math.min(20, this.form));
     }
     
@@ -258,37 +259,37 @@ export function generatePlayer(role?: 'handler' | 'cutter' | 'hybrid', age?: num
     const lastNames = ['Chen', 'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez',
         'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson'];
     
-    const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-    const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-    const playerRole = role || (Math.random() > 0.6 ? 'handler' : Math.random() > 0.5 ? 'cutter' : 'hybrid');
+    const firstName = firstNames[Math.floor(Random.next() * firstNames.length)];
+    const lastName = lastNames[Math.floor(Random.next() * lastNames.length)];
+    const playerRole = role || (Random.next() > 0.6 ? 'handler' : Random.next() > 0.5 ? 'cutter' : 'hybrid');
     
-    const id = `player_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = `player_${Date.now()}_${Random.next().toString(36).substr(2, 9)}`;
     const player = new PlayerStats(id, firstName, lastName, playerRole);
     
     // Randomize attributes based on role
     if (playerRole === 'handler') {
-        player.attributes.throwPower = 50 + Math.random() * 30;
-        player.attributes.throwAccuracy = 55 + Math.random() * 30;
-        player.attributes.forehand = 50 + Math.random() * 35;
-        player.attributes.backhand = 50 + Math.random() * 35;
-        player.attributes.breakThrows = 45 + Math.random() * 35;
-        player.attributes.awareness = 50 + Math.random() * 30;
+        player.attributes.throwPower = 50 + Random.next() * 30;
+        player.attributes.throwAccuracy = 55 + Random.next() * 30;
+        player.attributes.forehand = 50 + Random.next() * 35;
+        player.attributes.backhand = 50 + Random.next() * 35;
+        player.attributes.breakThrows = 45 + Random.next() * 35;
+        player.attributes.awareness = 50 + Random.next() * 30;
     } else if (playerRole === 'cutter') {
-        player.attributes.speed = 55 + Math.random() * 30;
-        player.attributes.acceleration = 55 + Math.random() * 30;
-        player.attributes.jumping = 50 + Math.random() * 30;
-        player.attributes.catching = 50 + Math.random() * 35;
-        player.attributes.layout = 40 + Math.random() * 40;
+        player.attributes.speed = 55 + Random.next() * 30;
+        player.attributes.acceleration = 55 + Random.next() * 30;
+        player.attributes.jumping = 50 + Random.next() * 30;
+        player.attributes.catching = 50 + Random.next() * 35;
+        player.attributes.layout = 40 + Random.next() * 40;
     }
     
     // Set age if provided
     if (age !== undefined) {
         player.development.age = age;
-        player.development.peakAge = 25 + Math.floor(Math.random() * 5);
+        player.development.peakAge = 25 + Math.floor(Random.next() * 5);
     }
     
     // Random potential (some players have higher ceilings)
-    player.development.potential = 60 + Math.random() * 35;
+    player.development.potential = 60 + Random.next() * 35;
     
     return player;
 }

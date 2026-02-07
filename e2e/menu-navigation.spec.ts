@@ -8,18 +8,8 @@ import {
 test('main menu is visible on load', async ({ page }) => {
     await goToMainMenu(page);
 
-    // Check for menu-related elements
-    const hasMenu = await page.evaluate(() => {
-        // Look for common menu indicators
-        const bodyText = document.body.textContent || '';
-        return bodyText.includes('Start') ||
-               bodyText.includes('Play') ||
-               bodyText.includes('Menu') ||
-               document.querySelector('[class*="menu"]') !== null ||
-               document.querySelector('[id*="menu"]') !== null;
-    });
-
-    expect(hasMenu).toBe(true);
+    await expect(page.locator('.title-screen')).toBeVisible();
+    await expect(page.locator('#menu-match')).toBeVisible();
 });
 
 test('can interact with menu elements', async ({ page }) => {
@@ -61,17 +51,14 @@ test('ESC key works in menu system', async ({ page }) => {
     await page.waitForTimeout(500);
 
     // Should not crash and title/menu should remain visible
-    const startButton = page.locator('#start-btn');
-    const mainMenu = page.locator('.main-menu');
-    const stillInUi = await startButton.isVisible().catch(() => false) ||
-        await mainMenu.isVisible().catch(() => false);
-    expect(stillInUi).toBe(true);
+    await expect(page.locator('.title-screen')).toBeVisible();
+    await expect(page.locator('#menu-match')).toBeVisible();
 });
 
 test('settings or options can be accessed', async ({ page }) => {
     await goToMainMenu(page);
 
-    const settingsButton = page.locator('#settings');
+    const settingsButton = page.locator('#menu-settings');
     await expect(settingsButton).toBeVisible();
     await settingsButton.click();
     await page.waitForTimeout(500);
@@ -92,8 +79,8 @@ test('menu responds to mouse movement', async ({ page }) => {
         await page.waitForTimeout(100);
     }
 
-    // Verify no crashes; main menu should still be present
-    await expect(page.locator('.main-menu')).toBeVisible();
+    // Verify no crashes; title hub should still be present
+    await expect(page.locator('.title-screen')).toBeVisible();
 });
 
 test('start game transition works', async ({ page }) => {

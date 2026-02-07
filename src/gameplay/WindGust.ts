@@ -1,3 +1,5 @@
+import { Random } from '../data/SeededRandom';
+
 export type GustShape = 'gaussian' | 'sharp_front' | 'oscillating';
 
 export interface Gust {
@@ -50,44 +52,44 @@ export class GustSystem {
 
     private spawnGust(fieldWidth: number, fieldLength: number): void {
         // Random direction
-        const direction = Math.random() * Math.PI * 2;
+        const direction = Random.next() * Math.PI * 2;
 
         // Random speed between 2-8 m/s additional
-        const speed = 2 + Math.random() * 6;
+        const speed = 2 + Random.next() * 6;
 
         // Random width (10-30m)
-        const width = 10 + Math.random() * 20;
+        const width = 10 + Random.next() * 20;
 
         // Random length (15-40m)
-        const length = 15 + Math.random() * 25;
+        const length = 15 + Random.next() * 25;
 
         // Travel speed proportional to gust strength
         const travelSpeed = 3 + speed * 0.5;
 
         // Random shape
         const shapes: GustShape[] = ['gaussian', 'sharp_front', 'oscillating'];
-        const shape = shapes[Math.floor(Math.random() * shapes.length)];
+        const shape = shapes[Math.floor(Random.next() * shapes.length)];
 
         // Spawn origin at random edge of field
         const margin = 10;
         let originX: number, originZ: number;
 
-        const edge = Math.floor(Math.random() * 4);
+        const edge = Math.floor(Random.next() * 4);
         switch (edge) {
             case 0: // Left
                 originX = -fieldWidth / 2 - margin;
-                originZ = Math.random() * fieldLength;
+                originZ = Random.next() * fieldLength;
                 break;
             case 1: // Right
                 originX = fieldWidth / 2 + margin;
-                originZ = Math.random() * fieldLength;
+                originZ = Random.next() * fieldLength;
                 break;
             case 2: // Top
-                originX = (Math.random() - 0.5) * fieldWidth;
+                originX = (Random.next() - 0.5) * fieldWidth;
                 originZ = -margin;
                 break;
             default: // Bottom
-                originX = (Math.random() - 0.5) * fieldWidth;
+                originX = (Random.next() - 0.5) * fieldWidth;
                 originZ = fieldLength + margin;
                 break;
         }

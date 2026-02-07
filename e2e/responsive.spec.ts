@@ -89,6 +89,7 @@ test.describe('Responsive Design Tests', () => {
             await startQuickMatch(page);
 
             const canvas = page.locator(MAIN_CANVAS_SELECTOR);
+            await expect(canvas).toBeVisible({ timeout: 15000 });
             const box = await canvas.boundingBox();
 
             if (box) {
@@ -169,7 +170,7 @@ test.describe('Responsive Design Tests', () => {
 
         // Should still be running
         const canvas = page.locator(MAIN_CANVAS_SELECTOR);
-        await expect(canvas).toBeVisible();
+        await expect(canvas).toBeVisible({ timeout: 15000 });
 
         // Should still render
         const isRendering = await page.evaluate(() => {

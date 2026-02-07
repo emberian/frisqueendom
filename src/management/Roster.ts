@@ -18,7 +18,9 @@ export class RosterManager {
     
     private loadLineup(): void {
         const roster = this.data.team.roster;
-        const ids = Array.isArray(this.data.team.startingLineupIds)
+        const ids = Array.isArray(this.data.team.offenseLineupIds)
+            ? this.data.team.offenseLineupIds
+            : Array.isArray(this.data.team.startingLineupIds)
             ? this.data.team.startingLineupIds
             : [];
         const explicit = ids

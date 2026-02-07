@@ -1,6 +1,6 @@
 import type { Team } from '../entities/Team';
 
-type BroadcastMode = 'hidden' | 'intro' | 'countdown';
+type BroadcastMode = 'hidden' | 'intro' | 'countdown' | 'status';
 
 interface TeamRenderData {
     name: string;
@@ -12,8 +12,10 @@ export class BroadcastPackage {
     private root: HTMLDivElement;
     private introCard: HTMLDivElement;
     private countdownCard: HTMLDivElement;
+    private statusCard: HTMLDivElement;
     private introTimer = 0;
     private countdownTimer = 0;
+    private statusTimer = 0;
     private countdownLabel = 'Pull In';
     private mode: BroadcastMode = 'hidden';
     private runCountdownAfterIntro = false;
@@ -35,6 +37,11 @@ export class BroadcastPackage {
         this.countdownCard.style.cssText =
             'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;';
         this.root.appendChild(this.countdownCard);
+
+        this.statusCard = document.createElement('div');
+        this.statusCard.style.cssText =
+            'position:absolute;left:50%;bottom:12%;transform:translateX(-50%);display:none;';
+        this.root.appendChild(this.statusCard);
     }
 
     showMatchIntro(
@@ -65,6 +72,16 @@ export class BroadcastPackage {
         this.updateCountdownHtml();
     }
 
+    showStatusText(text: string, duration: number = 3): void {
+        this.statusCard.innerHTML = `
+<div style="padding:10px 24px;border-radius:12px;border:1px solid rgba(255,255,255,0.24);background:rgba(7,18,34,0.85);backdrop-filter:blur(6px);text-align:center;box-shadow:0 12px 32px rgba(0,0,0,0.4);">
+  <div style="font-family:monospace;font-size:18px;font-weight:bold;letter-spacing:0.1em;color:#9de5ff;text-transform:uppercase;">${escapeHtml(text)}</div>
+</div>`;
+        this.statusCard.style.display = 'block';
+        this.statusTimer = duration;
+        this.mode = 'status';
+    }
+
     update(dt: number): void {
         if (this.mode === 'intro') {
             this.introTimer -= dt;
@@ -86,6 +103,15 @@ export class BroadcastPackage {
                 this.countdownCard.style.display = 'none';
                 this.mode = 'hidden';
                 this.pullLocked = false;
+            }
+            return;
+        }
+
+        if (this.statusTimer > 0) {
+            this.statusTimer -= dt;
+            if (this.statusTimer <= 0) {
+                this.statusCard.style.display = 'none';
+                if (this.mode === 'status') this.mode = 'hidden';
             }
         }
     }

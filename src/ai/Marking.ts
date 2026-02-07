@@ -4,9 +4,14 @@ import type { Player } from '../entities/Player';
 export function computeMarkPosition(
     thrower: Player,
     forceSide: number, // +1 or -1 to force one side
+    stallCount: number = 0,
 ): THREE.Vector3 {
+    // As stall count rises, marker gets closer and more aggressive
+    const proximity = Math.max(0.7, 1.4 - (stallCount / 10) * 0.5);
+    const lateralOffset = forceSide * 0.7;
+
     const offset = new THREE.Vector3(
-        forceSide * 0.5,
+        lateralOffset,
         0,
         0,
     );
@@ -18,9 +23,9 @@ export function computeMarkPosition(
 
     const markPos = thrower.movement.position.clone().add(
         new THREE.Vector3(
-            Math.sin(thrower.movement.facing) * 1.0,
+            Math.sin(thrower.movement.facing) * proximity,
             0,
-            Math.cos(thrower.movement.facing) * 1.0,
+            Math.cos(thrower.movement.facing) * proximity,
         ),
     );
     markPos.add(offset);

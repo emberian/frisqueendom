@@ -71,11 +71,11 @@ export const THROW_CONFIGS: Record<ThrowType, ThrowConfigData> = {
 
 // Power curve for throw charging
 export function calculateThrowPower(holdTime: number): number {
-    if (holdTime < 0.3) return (holdTime / 0.3) * 0.3;
-    if (holdTime < 0.5) return 0.3 + ((holdTime - 0.3) / 0.2) * 0.3;
-    if (holdTime < 0.8) return 0.6 + ((holdTime - 0.5) / 0.3) * 0.3;
-    if (holdTime < 1.0) return 0.9 + ((holdTime - 0.8) / 0.2) * 0.1;
-    if (holdTime < 1.2) return 1.0 - ((holdTime - 1.0) / 0.2) * 0.05;
+    if (holdTime < 0.45) return (holdTime / 0.45) * 0.3;
+    if (holdTime < 0.75) return 0.3 + ((holdTime - 0.45) / 0.3) * 0.3;
+    if (holdTime < 1.2) return 0.6 + ((holdTime - 0.75) / 0.45) * 0.3;
+    if (holdTime < 1.5) return 0.9 + ((holdTime - 1.2) / 0.3) * 0.1;
+    if (holdTime < 1.8) return 1.0 - ((holdTime - 1.5) / 0.3) * 0.05;
     return 0.85;
 }
 

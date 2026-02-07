@@ -19,10 +19,30 @@ export class ProgressionManager {
     static checkDailyReset(): void {
         const data = saveManager.getProgression();
         const today = new Date().toDateString();
+        let changed = false;
         
         if (data.dailyChallengeDate !== today) {
             data.dailyChallengeDate = today;
             data.dailyChallenges = generateDailyChallenges();
+            changed = true;
+        }
+
+        // Proactively check for level-based unlocks (e.g. for level 1 items)
+        const currentLevel = getLevel(data.experience);
+        if (data.level !== currentLevel) {
+            data.level = currentLevel;
+            changed = true;
+        }
+
+        const newUnlocks = checkUnlocks(currentLevel, data.unlockedCosmetics);
+        if (newUnlocks.length > 0) {
+            for (const u of newUnlocks) {
+                data.unlockedCosmetics.push(u.id);
+            }
+            changed = true;
+        }
+        
+        if (changed) {
             saveManager.saveProgression(data);
         }
     }
@@ -82,6 +102,7 @@ export class ProgressionManager {
         
         data.experience += xpGained;
         const newLevel = getLevel(data.experience);
+        data.level = newLevel;
         const levelUp = newLevel > startLevel;
         
         // Check for Unlocks

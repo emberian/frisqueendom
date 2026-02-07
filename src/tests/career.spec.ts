@@ -104,6 +104,14 @@ describe('Career Mode', () => {
             expect(career.team.roster.length).toBeGreaterThan(0);
         });
 
+        it('should initialize offense and defense lineups', () => {
+            const career = createNewCareer('TestCoach', 'TestTeam');
+
+            expect(career.team.offenseLineupIds.length).toBe(7);
+            expect(career.team.defenseLineupIds.length).toBe(7);
+            expect(career.team.startingLineupIds).toEqual(career.team.offenseLineupIds);
+        });
+
         it('should save and load career successfully', () => {
             const career = createNewCareer('TestCoach', 'TestTeam');
             saveCareer(career);
@@ -142,6 +150,10 @@ describe('Career Mode', () => {
     describe('Career Advancement', () => {
         it('should update W-L record after match result', () => {
             const career = createNewCareer('TestCoach', 'TestTeam');
+            const tournamentWeek =
+                career.schedule.find((event) => event.type === 'tournament')?.date ||
+                career.week;
+            career.week = tournamentWeek;
             const manager = new CareerManager(career);
 
             manager.processMatchResult({
@@ -163,6 +175,10 @@ describe('Career Mode', () => {
 
         it('should record loss when opponent wins', () => {
             const career = createNewCareer('TestCoach', 'TestTeam');
+            const tournamentWeek =
+                career.schedule.find((event) => event.type === 'tournament')?.date ||
+                career.week;
+            career.week = tournamentWeek;
             const manager = new CareerManager(career);
 
             manager.processMatchResult({
@@ -184,6 +200,10 @@ describe('Career Mode', () => {
 
         it('should advance week after match', () => {
             const career = createNewCareer('TestCoach', 'TestTeam');
+            const tournamentWeek =
+                career.schedule.find((event) => event.type === 'tournament')?.date ||
+                career.week;
+            career.week = tournamentWeek;
             const initialWeek = career.week;
             const manager = new CareerManager(career);
 
@@ -205,6 +225,10 @@ describe('Career Mode', () => {
 
         it('should accumulate points for and against', () => {
             const career = createNewCareer('TestCoach', 'TestTeam');
+            const tournamentWeek =
+                career.schedule.find((event) => event.type === 'tournament')?.date ||
+                career.week;
+            career.week = tournamentWeek;
             const manager = new CareerManager(career);
 
             manager.processMatchResult({
@@ -289,8 +313,20 @@ describe('Career Mode', () => {
 
             // Add an event for the current week
             career.schedule.push({
+                id: 'test_week_event',
                 type: 'tournament',
+                title: 'Test Event',
+                phase: 'regular',
                 tournamentId: 'test_tournament',
+                tier: 'local',
+                opponent: {
+                    teamId: 'test_opponent',
+                    teamName: 'Test Opponent',
+                    rating: 60,
+                    primaryColor: 0x123456,
+                    secondaryColor: 0x654321,
+                    difficulty: 'normal',
+                },
                 date: career.week,
             });
 
@@ -299,6 +335,149 @@ describe('Career Mode', () => {
 
             expect(current).not.toBeNull();
             expect(current?.date).toBe(career.week);
+        });
+
+        it('should execute tryout announcement and drills in offseason', () => {
+            const career = createNewCareer('TryoutCoach', 'TryoutTeam');
+            const manager = new CareerManager(career);
+
+            const announce = manager.postTryoutAnnouncement();
+            expect(announce.ok).toBe(true);
+            expect(manager.data.week).toBe(2);
+
+            const drill = manager.runTryoutDrill('scrimmage');
+            expect(drill.ok).toBe(true);
+
+            const finish = manager.finishTryoutCycle();
+            expect(finish.ok).toBe(true);
+            expect(manager.data.week).toBe(3);
+        });
+
+        it('should auto-resolve tournament events', () => {
+            const career = createNewCareer('SimCoach', 'SimTeam');
+            const firstTournament =
+                career.schedule.find((event) => event.type === 'tournament')?.date ||
+                5;
+            career.week = firstTournament;
+            const manager = new CareerManager(career);
+            const weekBefore = manager.data.week;
+
+            const outcome = manager.runCurrentEventAuto([
+                { type: 'timeout', atPoint: 6 },
+            ]);
+            expect(outcome.ok).toBe(true);
+            expect(manager.data.week).toBe(weekBefore + 1);
+        });
+    });
+
+    describe('Line Setting and Mentoring', () => {
+        it('should allow separate offense and defense line assignments', () => {
+            const career = createNewCareer('LineCoach', 'LineTeam');
+            const manager = new CareerManager(career);
+
+            const sorted = [...career.team.roster]
+                .sort((a, b) => b.overallRating - a.overallRating)
+                .map((player) => player.id);
+            const offense = sorted.slice(0, 7);
+            const defense = sorted.slice(7, 14);
+
+            const outcome = manager.setLineups(offense, defense);
+            expect(outcome.ok).toBe(true);
+            expect(manager.getOffenseLineup().map((player) => player.id)).toEqual(offense);
+            expect(manager.getDefenseLineup().map((player) => player.id)).toEqual(defense);
+        });
+
+        it('should progress mentorship sessions during training', () => {
+            const career = createNewCareer('MentorCoach', 'MentorTeam');
+            const practiceWeek =
+                career.schedule.find((event) => event.type === 'practice')?.date || 3;
+            career.week = practiceWeek;
+            const manager = new CareerManager(career);
+
+            const mentor = [...career.team.roster]
+                .sort((a, b) => b.development.age - a.development.age)[0];
+            const mentee = [...career.team.roster]
+                .sort((a, b) => a.development.age - b.development.age)
+                .find((player) => player.id !== mentor.id);
+
+            expect(mentee).toBeTruthy();
+            if (!mentee) return;
+
+            mentor.career.gamesPlayed = 24;
+            const assign = manager.assignMentorship(mentor.id, mentee.id);
+            expect(assign.ok).toBe(true);
+
+            const beforeXp = mentee.development.experience;
+            const training = manager.conductTraining('offense');
+            expect(training.ok).toBe(true);
+
+            const refreshedMentee = manager.data.team.roster.find(
+                (player) => player.id === mentee.id,
+            );
+            const pair = manager.data.mentorships.find(
+                (entry) => entry.menteeId === mentee.id,
+            );
+
+            expect(refreshedMentee?.development.experience).toBeGreaterThan(beforeXp);
+            expect(pair?.sessions).toBeGreaterThan(0);
+        });
+
+        it('should allow planning future practice focus', () => {
+            const career = createNewCareer('PlannerCoach', 'PlannerTeam');
+            const manager = new CareerManager(career);
+            const targetPractice = career.schedule.find(
+                (event) => event.type === 'practice' && event.date > career.week,
+            );
+
+            expect(targetPractice).toBeTruthy();
+            if (!targetPractice || targetPractice.type !== 'practice') return;
+
+            const outcome = manager.planPracticeFocus(targetPractice.date, 'throws');
+            expect(outcome.ok).toBe(true);
+            const refreshed = manager.data.schedule.find(
+                (event) => event.date === targetPractice.date,
+            );
+            expect(refreshed?.type).toBe('practice');
+            if (refreshed?.type === 'practice') {
+                expect(refreshed.focus).toBe('throws');
+            }
+        });
+
+        it('should apply latest scouting plan to playbook and practice planning', () => {
+            const career = createNewCareer('ScoutCoach', 'ScoutTeam');
+            const manager = new CareerManager(career);
+            const formationId = career.playbook.formations[0]?.id || 'vertical';
+            const nextPractice = career.schedule.find((event) => event.type === 'practice');
+            expect(nextPractice).toBeTruthy();
+
+            manager.data.scoutingReports.unshift({
+                id: 'scout_test_1',
+                season: manager.data.season,
+                week: manager.data.week,
+                teamId: 'ai_target',
+                teamName: 'Target Team',
+                strengths: ['Strong deep game'],
+                weaknesses: ['Shallow reset depth'],
+                tendencies: ['Prefers patient horizontal swings'],
+                keyPlayers: ['Handler Core'],
+                confidence: 0.9,
+                recommendedFormationId: formationId,
+                recommendedDefense: 'zone_331',
+                recommendedPracticeFocus: 'offense',
+                gamePlan: 'Lean horizontal movement and deny deep lane first.',
+            });
+
+            const outcome = manager.applyLatestScoutingPlan();
+            expect(outcome.ok).toBe(true);
+            expect(manager.data.activeFormationId).toBe(formationId);
+            if (nextPractice && nextPractice.type === 'practice') {
+                const updated = manager.data.schedule.find(
+                    (event) => event.date === nextPractice.date,
+                );
+                if (updated?.type === 'practice') {
+                    expect(updated.focus).toBe('offense');
+                }
+            }
         });
     });
 });

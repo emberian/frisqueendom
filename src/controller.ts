@@ -10,6 +10,7 @@ import type {
 
 const relayInput = document.getElementById('relay-url') as HTMLInputElement;
 const roomInput = document.getElementById('room') as HTMLInputElement;
+const accentColorInput = document.getElementById('accent-color') as HTMLInputElement;
 const connectButton = document.getElementById('connect') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const movePad = document.getElementById('move-pad') as HTMLDivElement;
@@ -101,7 +102,61 @@ const defaultRoom =
 relayInput.value = defaultRelay;
 roomInput.value = defaultRoom;
 renderAimReticle();
-setStatus('Disconnected.');
+setStatus('Disconnected');
+
+// Browser logic for controller
+let browserClient: any = null;
+const initBrowser = () => {
+    if (browserClient) return;
+    const url = relayInput.value.trim() || defaultRelay;
+    const ws = new WebSocket(url);
+    ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'list_rooms' }));
+    };
+    ws.onmessage = (event) => {
+        try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'room_list') {
+                updateLobbyUI(msg.rooms);
+            }
+        } catch {}
+    };
+    // Auto-refresh
+    setInterval(() => {
+        if (!socket && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'list_rooms' }));
+        }
+    }, 5000);
+    browserClient = ws;
+};
+
+function updateLobbyUI(rooms: any[]) {
+    const list = document.getElementById('room-list');
+    if (!list) return;
+    
+    const joinable = rooms.filter(r => r.joinable);
+    if (joinable.length === 0) {
+        list.innerHTML = '<div style="font-size: 0.85rem; color: rgba(255,255,255,0.3); text-align: center; padding: 10px;">No public games found.</div>';
+        return;
+    }
+
+    list.innerHTML = joinable.map(room => `
+        <div class="room-item" style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:rgba(255,255,255,0.05); border-radius:8px; cursor:pointer;" onclick="window.joinRoom('${room.room}')">
+            <div style="display:flex; flex-direction:column; gap:2px;">
+                <div style="font-size:14px; font-weight:bold;">${room.homeName} vs ${room.awayName}</div>
+                <div style="font-size:11px; color:rgba(255,255,255,0.5);">${room.homeScore} - ${room.awayScore} • ${room.controllerCount}/14 players</div>
+            </div>
+            <div style="font-size:11px; font-weight:bold; color:var(--accent);">JOIN →</div>
+        </div>
+    `).join('');
+}
+
+(window as any).joinRoom = (room: string) => {
+    roomInput.value = room;
+    connect();
+};
+
+initBrowser();
 
 connectButton.addEventListener('click', () => {
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -116,20 +171,27 @@ window.addEventListener('keydown', (event) => {
     if (event.code === 'KeyE') {
         switchQueued = true;
     }
+    if (!event.metaKey && !event.ctrlKey && event.code !== 'F12' && event.code !== 'F11' && event.code !== 'F5') {
+        event.preventDefault();
+    }
 });
 window.addEventListener('keyup', (event) => {
     keyboard.delete(event.code);
+    if (!event.metaKey && !event.ctrlKey && event.code !== 'F12' && event.code !== 'F11' && event.code !== 'F5') {
+        event.preventDefault();
+    }
 });
 
 window.addEventListener(
     'wheel',
     (event) => {
         curveAccumulator += event.deltaY > 0 ? -12 : 12;
+        event.preventDefault();
     },
-    { passive: true },
+    { passive: false },
 );
 
-document.querySelectorAll<HTMLButtonElement>('.buttons button').forEach((button) => {
+document.querySelectorAll<HTMLButtonElement>('.action-grid .btn').forEach((button) => {
     const action = button.dataset.action;
     if (!action) return;
     if (button.dataset.hold === 'true') {
@@ -188,7 +250,7 @@ function connect(): void {
             room,
         };
         ws.send(JSON.stringify(joinMessage));
-        setStatus(`Connected to room ${room}.`);
+        setStatus(`Connected: ${room}`, true);
         connectButton.textContent = 'Disconnect';
         connectButton.disabled = false;
     });
@@ -211,11 +273,11 @@ function connect(): void {
         closeWebRTC();
         connectButton.textContent = 'Connect';
         connectButton.disabled = false;
-        setStatus('Disconnected.');
+        setStatus('Disconnected');
     });
 
     ws.addEventListener('error', () => {
-        setStatus('Connection failed.');
+        setStatus('Connection failed');
         ws.close();
     });
 }
@@ -339,6 +401,7 @@ function buildControllerState(): RemoteControllerState {
         timeout: keyboard.has('KeyC') || gamepadTimeout,
         foul: keyboard.has('KeyV') || gamepadFoul,
         pause: keyboard.has('Escape') || gamepadPause,
+        accentColor: accentColorInput.value,
     };
     curveAccumulator = 0;
     return state;
@@ -527,8 +590,16 @@ function renderAimReticle(): void {
     aimReticle.style.top = `${aimY * 100}%`;
 }
 
-function setStatus(text: string): void {
+function setStatus(text: string, connected = false): void {
     statusEl.textContent = text;
+    const browserPanel = document.getElementById('browser-panel');
+    if (connected) {
+        statusEl.classList.add('connected');
+        if (browserPanel) browserPanel.style.display = 'none';
+    } else {
+        statusEl.classList.remove('connected');
+        if (browserPanel) browserPanel.style.display = 'flex';
+    }
 }
 
 function isButtonPressed(pad: Gamepad, index: number): boolean {

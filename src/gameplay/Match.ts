@@ -18,6 +18,7 @@ export class Match {
     pullReady = false;
     playerTeam: TeamSide = 'home';
     private gameTo = 11;
+    private groundedTimer = 0;
 
     private stateText = '';
     private stateTextTimer = 0;
@@ -85,7 +86,7 @@ export class Match {
                 this.handlePrePull(homeTeam, awayTeam, disc);
                 break;
             case 'pulling':
-                this.handlePulling(disc);
+                this.handlePulling(disc, homeTeam, awayTeam);
                 break;
             case 'live_play':
                 this.handleLivePlay(dt, homeTeam, awayTeam, disc);
@@ -149,9 +150,32 @@ export class Match {
         this.pullReady = false;
     }
 
-    private handlePulling(disc: Disc): void {
-        if (disc.state === 'held' || disc.state === 'on_ground') {
+    private handlePulling(
+        disc: Disc,
+        homeTeam: Team,
+        awayTeam: Team,
+    ): void {
+        if (disc.state === 'held') {
             // Reset previousState so PointFlow doesn't treat pull landing as a turnover
+            disc.previousState = disc.state;
+            this.phase = 'live_play';
+            this.point.start();
+        } else if (disc.state === 'on_ground') {
+            // Pull landed — force nearest offensive player to pick up
+            const offense =
+                this.offenseTeam === 'home' ? homeTeam : awayTeam;
+            let nearest = offense.players[0];
+            let nearestDistSq = Infinity;
+            for (const p of offense.players) {
+                const distSq = p.movement.position.distanceToSquared(
+                    disc.position,
+                );
+                if (distSq < nearestDistSq) {
+                    nearestDistSq = distSq;
+                    nearest = p;
+                }
+            }
+            disc.pickup(nearest);
             disc.previousState = disc.state;
             this.phase = 'live_play';
             this.point.start();
@@ -164,6 +188,31 @@ export class Match {
         awayTeam: Team,
         disc: Disc,
     ): void {
+        // Safety net: if disc is on ground with no holder for >2s, force pickup
+        if (disc.state === 'on_ground' && !disc.holder) {
+            this.groundedTimer += dt;
+            if (this.groundedTimer > 2.0) {
+                const offense =
+                    this.offenseTeam === 'home' ? homeTeam : awayTeam;
+                let nearest = offense.players[0];
+                let nearestDistSq = Infinity;
+                for (const p of offense.players) {
+                    const distSq = p.movement.position.distanceToSquared(
+                        disc.position,
+                    );
+                    if (distSq < nearestDistSq) {
+                        nearestDistSq = distSq;
+                        nearest = p;
+                    }
+                }
+                disc.pickup(nearest);
+                this.groundedTimer = 0;
+                this.point.start();
+            }
+        } else {
+            this.groundedTimer = 0;
+        }
+
         const offenseT =
             this.offenseTeam === 'home' ? homeTeam : awayTeam;
         this.point.update(
@@ -272,6 +321,11 @@ export class Match {
 
         this.phase = 'pre_pull';
         this.pullReady = false;
+    }
+
+    showStatusText(text: string, active: boolean): void {
+        this.stateText = text;
+        this.stateTextTimer = active ? 1.5 : 0;
     }
 
     private swapPossession(): void {
