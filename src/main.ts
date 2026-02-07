@@ -33,6 +33,8 @@ import {
 import {
     PostMatchOverlay,
     type MatchEventItem,
+    type ProgressionChallengeLine,
+    type ProgressionSummaryData,
     type PerformerLine,
 } from './ui/PostMatchOverlay';
 import {
@@ -49,7 +51,9 @@ import { Minimap } from './ui/Minimap';
 import type { TimeOfDay, WeatherCondition } from './data/WeatherTypes';
 import { WEATHER_EFFECTS } from './data/WeatherTypes';
 import { TutorialSystem } from './ui/Tutorial';
+import { FirstMatchOnboarding } from './ui/Onboarding';
 import { ReplayRecorder, saveReplay } from './gameplay/Replay';
+import { applyMatchProgression } from './gameplay/Progression';
 import { applyColorBlindPalette } from './ui/Accessibility';
 import {
     MenuSystem,
@@ -58,7 +62,7 @@ import {
 } from './ui/Menus';
 import { SpiritSystem } from './gameplay/Spirit';
 import { CareerManager } from './management/Career';
-import { saveManager } from './data/SaveLoad';
+import { saveManager, type MatchResult, type MatchPlayerStats } from './data/SaveLoad';
 import { generateRoster } from './data/PlayerStats';
 import { NetworkInputProxy } from './network/NetworkInputProxy';
 import { LanRelayClient } from './network/LanRelayClient';
@@ -541,6 +545,11 @@ async function main() {
         hud.updateWind(windSpeed, windDir);
         broadcast.showMatchIntro(homeTeam, awayTeam, match.getGameTo());
 
+        const saveData = saveManager.load() ?? saveManager.createNewSave();
+        if (!saveManager.hasSave()) {
+            saveManager.save(saveData);
+        }
+
         // Tutorial system
         const tutorial = tutorialMode
             ? new TutorialSystem(document.getElementById('ui')!, () => {
@@ -551,6 +560,17 @@ async function main() {
         if (tutorial) {
             tutorial.start(1);
         }
+        const onboarding =
+            !tutorialMode &&
+            !isSpectator &&
+            currentMode === 'quick_match' &&
+            !saveData.tutorialCompleted
+                ? new FirstMatchOnboarding(document.getElementById('ui')!, () => {
+                      const save = saveManager.load() || saveManager.createNewSave();
+                      save.tutorialCompleted = true;
+                      saveManager.save(save);
+                  })
+                : null;
 
         // Replay recorder
         const replayRecorder = new ReplayRecorder();
@@ -610,6 +630,10 @@ async function main() {
                 attempts: 0,
                 longThrowMeters: 0,
             },
+        };
+        const stallTurnoversByTeam: Record<TeamSide, number> = {
+            home: 0,
+            away: 0,
         };
         const momentumEvents: Array<{
             team: TeamSide;
@@ -798,6 +822,129 @@ async function main() {
                     impact: perf.goals * 3 + perf.blocks * 2,
                 }))
                 .sort((a, b) => b.impact - a.impact || b.goals - a.goals);
+        }
+
+        function getTeamName(team: TeamSide): string {
+            return team === 'home' ? homeTeam.name : awayTeam.name;
+        }
+
+        function buildProgressionData(
+            performers: PerformerLine[],
+        ): ProgressionSummaryData | null {
+            if (isSpectator) return null;
+
+            const playerTeam = match.playerTeam;
+            const teamScore = playerTeam === 'home' ? match.score[0] : match.score[1];
+            const opponentScore = playerTeam === 'home' ? match.score[1] : match.score[0];
+            const teamName = getTeamName(playerTeam);
+            const teamBlocks = performers
+                .filter((line) => line.teamName === teamName)
+                .reduce((total, line) => total + line.blocks, 0);
+
+            const progression = applyMatchProgression({
+                teamScore,
+                opponentScore,
+                teamBlocks,
+                teamCompletions: teamStats[playerTeam].completions,
+                stallTurnovers: stallTurnoversByTeam[playerTeam],
+                scoredGoals: teamScore,
+            });
+
+            const challenges: ProgressionChallengeLine[] =
+                progression.dailyChallenges.map((challenge) => ({
+                    title: challenge.title,
+                    description: challenge.description,
+                    progressLabel: `${challenge.progress}/${challenge.target}`,
+                    completed: challenge.completed,
+                    rewardXp: challenge.rewardXp,
+                }));
+
+            return {
+                level: progression.level,
+                experience: progression.experience,
+                xpToNext: progression.xpToNext,
+                gainedXp: progression.gainedXp,
+                levelUps: progression.levelUps,
+                unlockedCosmetics: progression.unlockedCosmetics,
+                challenges,
+            };
+        }
+
+        function buildCareerMatchResult(
+            performers: PerformerLine[],
+        ): MatchResult | null {
+            if (currentMode !== 'career_match' || !careerManager) {
+                return null;
+            }
+
+            const lineup = careerManager.getStartingLineup();
+            const scoreA = match.score[0];
+            const scoreB = match.score[1];
+            const completions = teamStats.home.completions;
+            const attempts = teamStats.home.attempts;
+
+            const perfByName = new Map<string, PerformerLine>();
+            for (const perf of performers) {
+                perfByName.set(perf.name, perf);
+            }
+
+            const statLines: MatchPlayerStats[] = lineup.map((player, idx) => {
+                const perf = perfByName.get(player.fullName);
+                const baseCompletions = Math.floor(completions / Math.max(1, lineup.length));
+                const remainderCompletions = completions % Math.max(1, lineup.length);
+                const baseAttempts = Math.floor(attempts / Math.max(1, lineup.length));
+                const remainderAttempts = attempts % Math.max(1, lineup.length);
+                const playerCompletions = baseCompletions + (idx < remainderCompletions ? 1 : 0);
+                const playerAttempts = baseAttempts + (idx < remainderAttempts ? 1 : 0);
+
+                return {
+                    playerId: player.id,
+                    goals: perf?.goals ?? 0,
+                    assists: 0,
+                    blocks: perf?.blocks ?? 0,
+                    throwaways: 0,
+                    drops: 0,
+                    completions: playerCompletions,
+                    attempts: playerAttempts,
+                    plusMinus: (perf?.goals ?? 0) + (perf?.blocks ?? 0),
+                    playingTime: 0,
+                };
+            });
+
+            const highlights = matchEvents
+                .map((event) => {
+                    if (event.type === 'goal') {
+                        return {
+                            type: 'goal' as const,
+                            playerId: lineup[0]?.id ?? 'unknown',
+                            timestamp: 0,
+                            description: event.text,
+                        };
+                    }
+                    if (event.type === 'block') {
+                        return {
+                            type: 'block' as const,
+                            playerId: lineup[0]?.id ?? 'unknown',
+                            timestamp: 0,
+                            description: event.text,
+                        };
+                    }
+                    return null;
+                })
+                .filter((item): item is NonNullable<typeof item> => item !== null);
+
+            return {
+                id: `career_match_${Date.now()}`,
+                date: Date.now(),
+                opponentName: awayTeam.name,
+                opponentRating: 60,
+                playerScore: scoreA,
+                opponentScore: scoreB,
+                playerSpirit: spiritSystem.getPlayerTeamSpirit().total,
+                opponentSpirit: spiritSystem.getAITeamSpirit().total,
+                stats: statLines,
+                highlights,
+            };
         }
 
         const primarySlot: ControllerSlot = {
@@ -1100,6 +1247,9 @@ async function main() {
                 match.phase === 'turnover_reset'
             ) {
                 teamStats[prevOffenseTeam].turnovers += 1;
+                if (match.point.turnoverReason === 'stall') {
+                    stallTurnoversByTeam[prevOffenseTeam] += 1;
+                }
                 registerMomentum(match.offenseTeam, 0.7);
                 recordEvent(
                     'turnover',
@@ -1221,6 +1371,11 @@ async function main() {
                 replayRecorder.stop();
                 try { saveReplay(replayRecorder.getData()); } catch (_) { /* storage full */ }
                 const performerLines = buildPerformerLines();
+                const progression = buildProgressionData(performerLines);
+                const careerResult = buildCareerMatchResult(performerLines);
+                if (careerResult && careerManager) {
+                    careerManager.processMatchResult(careerResult);
+                }
                 postMatchOverlay.show(
                     {
                         homeTeamName: homeTeam.name,
@@ -1231,6 +1386,7 @@ async function main() {
                             performerLines.length > 0 ? performerLines[0] : null,
                         topPerformers: performerLines,
                         events: matchEvents,
+                        progression,
                     },
                     () => {
                         stopGame();
@@ -1270,6 +1426,7 @@ async function main() {
             ) {
                 primarySlot.switching.switchToNext(homeTeam);
                 primarySlot.switchCooldown = 0.3;
+                onboarding?.check('catch_or_switch');
             }
             if (secondarySlot && secondarySlot.active) {
                 secondarySlot.switchCooldown = Math.max(
@@ -1419,6 +1576,7 @@ async function main() {
                                 throwParams,
                             );
                             tutorial?.checkCondition('disc_thrown');
+                            onboarding?.check('throw');
                         }
 
                         controlledPlayer.update(frameDt, {
@@ -1462,8 +1620,23 @@ async function main() {
                     tutorial.checkCondition('disc_picked_up');
                 }
                 if (homeScored || awayScored) {
-                    tutorial.checkCondition('scored_point');
+                    tutorial.checkCondition('point_scored');
                     tutorial.checkCondition('tutorial_completed');
+                }
+            }
+            if (onboarding?.isActive()) {
+                const rawMove = primarySlot.input.getMovementDir();
+                if (Math.abs(rawMove.x) > 0.1 || Math.abs(rawMove.z) > 0.1) {
+                    onboarding.check('move');
+                }
+                if (
+                    primarySlot.input.isSprinting() &&
+                    (Math.abs(rawMove.x) > 0.1 || Math.abs(rawMove.z) > 0.1)
+                ) {
+                    onboarding.check('sprint');
+                }
+                if (homeScored || awayScored) {
+                    onboarding.check('score');
                 }
             }
 
@@ -1599,6 +1772,7 @@ async function main() {
 
                     // Tutorial condition: disc caught
                     tutorial?.checkCondition('disc_caught');
+                    onboarding?.check('catch_or_switch');
 
                     if (wasInFlight && thrownBy && !result.isInterception) {
                         teamStats[thrownBy].completions += 1;
@@ -1778,6 +1952,7 @@ async function main() {
                 minimap.dispose();
                 fieldFlags.dispose();
                 tutorial?.stop();
+                onboarding?.destroy();
                 replayRecorder.stop();
                 disposeSceneResources(scene);
                 renderer.dispose();

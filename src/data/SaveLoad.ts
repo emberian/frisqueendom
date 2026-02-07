@@ -14,6 +14,7 @@ export interface TeamData {
     primaryColor: number;
     secondaryColor: number;
     roster: PlayerStats[];
+    startingLineupIds: string[];
     playbookId: string;
     stats: TeamSeasonStats;
 }
@@ -203,6 +204,7 @@ export interface SaveData {
     tutorialCompleted: boolean;
     achievements: string[];
     stats: GlobalStats;
+    progression: ProgressionData;
 }
 
 export interface GlobalStats {
@@ -214,6 +216,32 @@ export interface GlobalStats {
     bestHuckDistance: number;
     fastestScore: number;
     longestGame: number;
+}
+
+export type DailyChallengeMetric =
+    | 'team_goals'
+    | 'team_blocks'
+    | 'team_completions'
+    | 'no_stall_turnovers'
+    | 'win_match';
+
+export interface DailyChallengeState {
+    id: string;
+    title: string;
+    description: string;
+    metric: DailyChallengeMetric;
+    target: number;
+    progress: number;
+    rewardXp: number;
+    completed: boolean;
+}
+
+export interface ProgressionData {
+    level: number;
+    experience: number;
+    unlockedCosmetics: string[];
+    dailyChallengeDate: string;
+    dailyChallenges: DailyChallengeState[];
 }
 
 // Default settings
@@ -261,6 +289,16 @@ export function getDefaultSettings(): GameSettings {
             largeText: false,
             reducedMotion: false,
         },
+    };
+}
+
+export function getDefaultProgressionData(): ProgressionData {
+    return {
+        level: 1,
+        experience: 0,
+        unlockedCosmetics: ['Classic Jersey Accent'],
+        dailyChallengeDate: '',
+        dailyChallenges: [],
     };
 }
 
@@ -345,6 +383,7 @@ export class SaveManager {
                 fastestScore: 0,
                 longestGame: 0,
             },
+            progression: getDefaultProgressionData(),
         };
     }
     
@@ -390,6 +429,31 @@ export class SaveManager {
         // Version 1 is current
         if (!data.version) {
             data.version = 1;
+        }
+        if (!data.stats) {
+            data.stats = this.createNewSave().stats;
+        }
+        if (!data.progression) {
+            data.progression = getDefaultProgressionData();
+        } else {
+            const defaults = getDefaultProgressionData();
+            data.progression = {
+                ...defaults,
+                ...data.progression,
+                unlockedCosmetics:
+                    Array.isArray(data.progression.unlockedCosmetics)
+                        ? data.progression.unlockedCosmetics
+                        : defaults.unlockedCosmetics,
+                dailyChallenges:
+                    Array.isArray(data.progression.dailyChallenges)
+                        ? data.progression.dailyChallenges
+                        : defaults.dailyChallenges,
+            };
+        }
+        if (data.career?.team && !Array.isArray(data.career.team.startingLineupIds)) {
+            data.career.team.startingLineupIds = (data.career.team.roster || [])
+                .slice(0, 7)
+                .map((player: PlayerStats) => player.id);
         }
         return data;
     }
@@ -499,6 +563,17 @@ export class SaveManager {
         const save = this.load();
         return save ? save.stats : this.createNewSave().stats;
     }
+
+    getProgression(): ProgressionData {
+        const save = this.load();
+        return save ? save.progression : getDefaultProgressionData();
+    }
+
+    saveProgression(progression: ProgressionData): void {
+        const save = this.load() || this.createNewSave();
+        save.progression = progression;
+        this.save(save);
+    }
 }
 
 // Helper functions
@@ -515,6 +590,7 @@ export function createNewCareer(playerName: string, teamName: string): CareerDat
         primaryColor: 0x1a73e8,
         secondaryColor: 0xffffff,
         roster,
+        startingLineupIds: roster.slice(0, 7).map((p) => p.id),
         playbookId: 'default',
         stats: {
             wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0,
@@ -643,6 +719,11 @@ function hydrateCareerData(career: CareerData | null): CareerData | null {
         team: {
             ...career.team,
             roster,
+            startingLineupIds:
+                Array.isArray(career.team?.startingLineupIds) &&
+                career.team.startingLineupIds.length > 0
+                    ? career.team.startingLineupIds
+                    : roster.slice(0, 7).map((player) => player.id),
         },
     };
 }

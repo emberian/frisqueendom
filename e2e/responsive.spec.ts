@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import {
+    MAIN_CANVAS_SELECTOR,
+    startQuickMatch,
+} from './helpers/navigation';
 
 test.describe('Responsive Design Tests', () => {
     const viewports = [
@@ -10,10 +14,10 @@ test.describe('Responsive Design Tests', () => {
     for (const viewport of viewports) {
         test(`app works at ${viewport.name}`, async ({ page }) => {
             await page.setViewportSize({ width: viewport.width, height: viewport.height });
-            await page.goto('/');
+            await startQuickMatch(page);
 
             // Wait for canvas to render
-            const canvas = page.locator('canvas');
+            const canvas = page.locator(MAIN_CANVAS_SELECTOR);
             await expect(canvas).toBeVisible({ timeout: 10000 });
 
             // Verify canvas dimensions are appropriate
@@ -29,11 +33,10 @@ test.describe('Responsive Design Tests', () => {
 
         test(`Three.js renders correctly at ${viewport.name}`, async ({ page }) => {
             await page.setViewportSize({ width: viewport.width, height: viewport.height });
-            await page.goto('/');
-            await page.waitForTimeout(2000);
+            await startQuickMatch(page);
 
             const isRendering = await page.evaluate(() => {
-                const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+                const canvas = document.querySelector('canvas[data-engine]') as HTMLCanvasElement;
                 if (!canvas) return false;
 
                 return canvas.width > 0 && canvas.height > 0;
@@ -57,9 +60,9 @@ test.describe('Responsive Design Tests', () => {
 
     test('canvas resizes when window resizes', async ({ page }) => {
         await page.setViewportSize({ width: 1280, height: 720 });
-        await page.goto('/');
+        await startQuickMatch(page);
 
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await canvas.waitFor({ state: 'visible', timeout: 10000 });
 
         // Get initial size
@@ -83,10 +86,9 @@ test.describe('Responsive Design Tests', () => {
 
         for (const viewport of viewports) {
             await page.setViewportSize({ width: viewport.width, height: viewport.height });
-            await page.goto('/');
-            await page.waitForTimeout(1000);
+            await startQuickMatch(page);
 
-            const canvas = page.locator('canvas');
+            const canvas = page.locator(MAIN_CANVAS_SELECTOR);
             const box = await canvas.boundingBox();
 
             if (box) {
@@ -104,12 +106,7 @@ test.describe('Responsive Design Tests', () => {
 
     test('game is playable at minimum viewport', async ({ page }) => {
         await page.setViewportSize({ width: 800, height: 600 });
-        await page.goto('/');
-        await page.waitForTimeout(2000);
-
-        // Try to start game
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(500);
+        await startQuickMatch(page);
 
         // Try movement
         await page.keyboard.press('W');
@@ -118,7 +115,7 @@ test.describe('Responsive Design Tests', () => {
         await page.waitForTimeout(500);
 
         // Should still work
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
     });
 
@@ -140,11 +137,10 @@ test.describe('Responsive Design Tests', () => {
 
     test('canvas maintains quality at high resolution', async ({ page }) => {
         await page.setViewportSize({ width: 1920, height: 1080 });
-        await page.goto('/');
-        await page.waitForTimeout(2000);
+        await startQuickMatch(page);
 
         const canvasResolution = await page.evaluate(() => {
-            const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+            const canvas = document.querySelector('canvas[data-engine]') as HTMLCanvasElement;
             if (!canvas) return { width: 0, height: 0 };
 
             return {
@@ -159,8 +155,7 @@ test.describe('Responsive Design Tests', () => {
     });
 
     test('rapid viewport changes do not crash app', async ({ page }) => {
-        await page.goto('/');
-        await page.waitForTimeout(1000);
+        await startQuickMatch(page);
 
         // Rapidly change viewport sizes
         await page.setViewportSize({ width: 1920, height: 1080 });
@@ -173,12 +168,12 @@ test.describe('Responsive Design Tests', () => {
         await page.waitForTimeout(500);
 
         // Should still be running
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
 
         // Should still render
         const isRendering = await page.evaluate(() => {
-            const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+            const canvas = document.querySelector('canvas[data-engine]') as HTMLCanvasElement;
             return canvas && canvas.width > 0 && canvas.height > 0;
         });
 

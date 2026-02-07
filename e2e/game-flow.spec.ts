@@ -1,54 +1,14 @@
 import { test, expect } from '@playwright/test';
-
-// WASM + Vite first-compile can be slow; allow generous timeout for initial load
-const WASM_LOAD_TIMEOUT = 30_000;
-const MENU_TRANSITION_TIMEOUT = 5_000;
-// Game init with software rendering (SwiftShader) is slow
-const GAME_INIT_TIMEOUT = 45_000;
-// Panel animations take 420ms; wait extra for SwiftShader slowdown
-const ANIMATION_SETTLE = 600;
-
-/**
- * Helper: wait for the title screen to fully render (WASM must load first)
- */
-async function waitForTitleScreen(page: import('@playwright/test').Page) {
-    await page.goto('/');
-    await page.waitForSelector('#start-btn', { timeout: WASM_LOAD_TIMEOUT });
-    await page.waitForTimeout(ANIMATION_SETTLE);
-}
-
-/**
- * Helper: navigate from title → main menu
- */
-async function goToMainMenu(page: import('@playwright/test').Page) {
-    await waitForTitleScreen(page);
-    await page.click('#start-btn');
-    await page.waitForSelector('.main-menu', { timeout: MENU_TRANSITION_TIMEOUT });
-    await page.waitForTimeout(ANIMATION_SETTLE);
-}
-
-/**
- * Helper: click a button that triggers heavy game init (uses evaluate to avoid blocking)
- */
-async function clickGameStart(page: import('@playwright/test').Page, selector: string) {
-    await page.evaluate((sel) => {
-        (document.querySelector(sel) as HTMLElement)?.click();
-    }, selector);
-}
-
-/**
- * Helper: start a quick match from main menu
- */
-async function startQuickMatch(page: import('@playwright/test').Page) {
-    await goToMainMenu(page);
-    await page.click('#quick-match');
-    await page.waitForSelector('.match-setup', { timeout: MENU_TRANSITION_TIMEOUT });
-    await page.waitForTimeout(ANIMATION_SETTLE);
-    await clickGameStart(page, '#start-match');
-    // Wait for Three.js canvas (game init with software rendering can be slow)
-    await page.waitForSelector('canvas[data-engine]', { timeout: GAME_INIT_TIMEOUT });
-    await page.waitForTimeout(2000); // Let the game loop stabilize
-}
+import {
+    ANIMATION_SETTLE,
+    GAME_INIT_TIMEOUT,
+    MAIN_CANVAS_SELECTOR,
+    MENU_TRANSITION_TIMEOUT,
+    clickGameStart,
+    goToMainMenu,
+    startQuickMatch,
+    waitForTitleScreen,
+} from './helpers/navigation';
 
 test.describe('Menu Navigation Flow', () => {
     test('title screen loads with start button', async ({ page }) => {
@@ -137,7 +97,7 @@ test.describe('Menu Navigation Flow', () => {
 test.describe('Match Lifecycle', () => {
     test('quick match starts and shows canvas', async ({ page }) => {
         await startQuickMatch(page);
-        await expect(page.locator('canvas[data-engine]')).toBeVisible();
+        await expect(page.locator(MAIN_CANVAS_SELECTOR)).toBeVisible();
     });
 
     test('match runs 10 seconds without critical errors', async ({ page }) => {
@@ -175,7 +135,7 @@ test.describe('Match Lifecycle', () => {
 
         // Pause menu should be gone, canvas still visible
         await expect(page.locator('.pause-menu')).toHaveCount(0);
-        await expect(page.locator('canvas[data-engine]')).toBeVisible();
+        await expect(page.locator(MAIN_CANVAS_SELECTOR)).toBeVisible();
     });
 
     test('spectator match starts and shows canvas', async ({ page }) => {
@@ -186,10 +146,10 @@ test.describe('Match Lifecycle', () => {
 
         // Click "Watch Sim" via evaluate (triggers heavy game init)
         await clickGameStart(page, '#watch-sim');
-        await page.waitForSelector('canvas[data-engine]', { timeout: GAME_INIT_TIMEOUT });
+        await page.waitForSelector(MAIN_CANVAS_SELECTOR, { timeout: GAME_INIT_TIMEOUT });
         await page.waitForTimeout(2000);
 
-        await expect(page.locator('canvas[data-engine]')).toBeVisible();
+        await expect(page.locator(MAIN_CANVAS_SELECTOR)).toBeVisible();
     });
 
     test('quit match returns to main menu', async ({ page }) => {
@@ -228,10 +188,10 @@ test.describe('Weather & Environment', () => {
         // Select sunset
         await page.selectOption('#time-of-day', 'sunset');
         await clickGameStart(page, '#start-match');
-        await page.waitForSelector('canvas[data-engine]', { timeout: GAME_INIT_TIMEOUT });
+        await page.waitForSelector(MAIN_CANVAS_SELECTOR, { timeout: GAME_INIT_TIMEOUT });
         await page.waitForTimeout(3000);
 
-        await expect(page.locator('canvas[data-engine]')).toBeVisible();
+        await expect(page.locator(MAIN_CANVAS_SELECTOR)).toBeVisible();
         const criticalErrors = errors.filter(e =>
             !e.includes('favicon') && !e.includes('404') && !e.includes('net::')
         );
@@ -251,7 +211,7 @@ test.describe('Weather & Environment', () => {
 
         await page.selectOption('#weather', 'rain');
         await clickGameStart(page, '#start-match');
-        await page.waitForSelector('canvas[data-engine]', { timeout: GAME_INIT_TIMEOUT });
+        await page.waitForSelector(MAIN_CANVAS_SELECTOR, { timeout: GAME_INIT_TIMEOUT });
         await page.waitForTimeout(5000);
 
         const criticalErrors = errors.filter(e =>

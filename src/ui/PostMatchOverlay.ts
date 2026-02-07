@@ -22,6 +22,25 @@ export interface MatchSummaryData {
     playerOfMatch: PerformerLine | null;
     topPerformers: PerformerLine[];
     events: MatchEventItem[];
+    progression?: ProgressionSummaryData | null;
+}
+
+export interface ProgressionChallengeLine {
+    title: string;
+    description: string;
+    progressLabel: string;
+    completed: boolean;
+    rewardXp: number;
+}
+
+export interface ProgressionSummaryData {
+    level: number;
+    experience: number;
+    xpToNext: number;
+    gainedXp: number;
+    levelUps: number;
+    unlockedCosmetics: string[];
+    challenges: ProgressionChallengeLine[];
 }
 
 export class PostMatchOverlay {
@@ -72,6 +91,70 @@ export class PostMatchOverlay {
                 return `<li style="display:grid;grid-template-columns:72px 1fr;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);"><span style="color:${color};font-weight:bold;">${escapeHtml(event.timeLabel)}</span><span>${escapeHtml(event.text)}</span></li>`;
             })
             .join('');
+
+        const progression = summary.progression;
+        const xpPct = progression
+            ? Math.max(0, Math.min(100, (progression.experience / Math.max(1, progression.xpToNext)) * 100))
+            : 0;
+        const challengeCards = progression
+            ? progression.challenges
+                  .map((challenge) => {
+                      const accent = challenge.completed ? '#8ff2a6' : '#ffd166';
+                      const badge = challenge.completed ? 'Complete' : 'Active';
+                      return `<div style="padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,0.14);background:rgba(2,9,18,0.5);">
+  <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+    <strong style="font-size:12px;color:${accent};">${escapeHtml(challenge.title)}</strong>
+    <span style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:rgba(255,255,255,0.72);">${badge}</span>
+  </div>
+  <div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.72);">${escapeHtml(challenge.description)}</div>
+  <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:11px;">
+    <span>${escapeHtml(challenge.progressLabel)}</span>
+    <span style="color:#ffd166;">+${challenge.rewardXp} XP</span>
+  </div>
+</div>`;
+                  })
+                  .join('')
+            : '';
+        const unlocks = progression
+            ? progression.unlockedCosmetics
+                  .map((name) => `<li style="padding:3px 0;">${escapeHtml(name)}</li>`)
+                  .join('')
+            : '';
+        const progressionSection = progression
+            ? `
+  <section style="margin-top:12px;padding:10px;border-radius:12px;background:rgba(3,10,20,0.45);border:1px solid rgba(255,255,255,0.14);">
+    <h3 style="margin:0 0 8px;font-family:monospace;font-size:15px;letter-spacing:0.08em;text-transform:uppercase;color:#ffcf6c;">Progression</h3>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;">
+      <div style="padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,0.14);background:rgba(2,9,18,0.5);font-family:monospace;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+          <strong style="font-size:14px;color:#ffd166;">Level ${progression.level}</strong>
+          <span style="font-size:12px;color:#8ff2a6;">+${progression.gainedXp} XP</span>
+        </div>
+        <div style="margin-top:6px;height:10px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);">
+          <div style="height:100%;width:${xpPct.toFixed(1)}%;background:linear-gradient(90deg,#ffd166,#ff8f4a,#ff4f7d);"></div>
+        </div>
+        <div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,0.74);">${progression.experience} / ${progression.xpToNext} XP to next level</div>
+        ${
+            progression.levelUps > 0
+                ? `<div style="margin-top:6px;font-size:11px;color:#8ff2a6;">Level up x${progression.levelUps}!</div>`
+                : ''
+        }
+      </div>
+      <div style="padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,0.14);background:rgba(2,9,18,0.5);">
+        <div style="font-family:monospace;font-size:12px;color:#8fdcff;letter-spacing:0.06em;text-transform:uppercase;">Daily Challenges</div>
+        <div style="margin-top:8px;display:grid;gap:8px;">${challengeCards}</div>
+      </div>
+    </div>
+    ${
+        unlocks
+            ? `<div style="margin-top:10px;padding:8px;border-radius:10px;background:rgba(30,48,14,0.45);border:1px solid rgba(143,242,166,0.44);">
+                 <div style="font-family:monospace;font-size:12px;letter-spacing:0.07em;text-transform:uppercase;color:#8ff2a6;">New Cosmetic Unlocks</div>
+                 <ul style="margin:6px 0 0 14px;padding:0;font-family:monospace;font-size:12px;">${unlocks}</ul>
+               </div>`
+            : ''
+    }
+  </section>`
+            : '';
 
         this.root.innerHTML = `
 <div style="width:min(980px,95vw);max-height:90vh;overflow:auto;border-radius:18px;border:1px solid rgba(255,255,255,0.24);background:linear-gradient(150deg,rgba(5,14,28,0.95),rgba(9,28,49,0.92));box-shadow:0 30px 90px rgba(0,0,0,0.55);padding:18px;">
@@ -125,6 +208,7 @@ export class PostMatchOverlay {
       </table>
     </div>
   </section>
+  ${progressionSection}
 </div>`;
         this.root.style.display = 'flex';
         this.root

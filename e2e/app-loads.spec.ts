@@ -1,9 +1,13 @@
 import { test, expect } from '@playwright/test';
+import {
+    MAIN_CANVAS_SELECTOR,
+    startQuickMatch,
+    waitForTitleScreen,
+} from './helpers/navigation';
 
 test('app loads and renders canvas', async ({ page }) => {
-    await page.goto('/');
-    // Wait for the canvas to be created by Three.js
-    const canvas = page.locator('canvas');
+    await startQuickMatch(page);
+    const canvas = page.locator(MAIN_CANVAS_SELECTOR);
     await expect(canvas).toBeVisible({ timeout: 10000 });
 });
 
@@ -20,24 +24,24 @@ test('app has no console errors on load', async ({ page }) => {
 });
 
 test('WASM loads successfully', async ({ page }) => {
-    await page.goto('/');
+    await waitForTitleScreen(page);
     // The app creates a DiscSimulator from WASM - if it loads, WASM worked
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(1000);
     // Check that no WASM-related errors occurred
     const wasmError = await page.evaluate(() => {
         return document.querySelector('.error')?.textContent ?? null;
     });
     expect(wasmError).toBeNull();
+    await expect(page.locator('#start-btn')).toBeVisible();
 });
 
 test('Three.js scene initializes', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForTimeout(2000);
+    await startQuickMatch(page);
 
     // Check that Three.js is rendering frames
     const isRendering = await page.evaluate(() => {
         // Check if canvas has been drawn to
-        const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+        const canvas = document.querySelector('canvas[data-engine]') as HTMLCanvasElement;
         if (!canvas) return false;
 
         const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
@@ -53,8 +57,8 @@ test('page title is correct', async ({ page }) => {
 });
 
 test('canvas is properly sized', async ({ page }) => {
-    await page.goto('/');
-    const canvas = page.locator('canvas');
+    await startQuickMatch(page);
+    const canvas = page.locator(MAIN_CANVAS_SELECTOR);
     await canvas.waitFor({ state: 'visible', timeout: 10000 });
 
     const box = await canvas.boundingBox();

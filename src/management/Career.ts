@@ -48,18 +48,52 @@ export class CareerManager {
     
     // Roster management
     getStartingLineup(): PlayerStats[] {
-        // Return first 7 players sorted by role
+        const fromIds = (this.data.team.startingLineupIds || [])
+            .map((id) => this.data.team.roster.find((p) => p.id === id))
+            .filter((p): p is PlayerStats => !!p);
+        if (fromIds.length >= 7) {
+            return fromIds.slice(0, 7);
+        }
+
+        // Fallback for migrated saves lacking explicit lineup.
         const handlers = this.data.team.roster
-            .filter(p => p.role === 'handler')
+            .filter((p) => p.role === 'handler')
             .slice(0, 2);
         const cutters = this.data.team.roster
-            .filter(p => p.role === 'cutter')
+            .filter((p) => p.role === 'cutter')
             .slice(0, 4);
         const hybrid = this.data.team.roster
-            .filter(p => p.role === 'hybrid')
+            .filter((p) => p.role === 'hybrid')
             .slice(0, 1);
-        
-        return [...handlers, ...cutters, ...hybrid].slice(0, 7);
+
+        const fallback = [...handlers, ...cutters, ...hybrid].slice(0, 7);
+        this.data.team.startingLineupIds = fallback.map((p) => p.id);
+        return fallback;
+    }
+
+    setStartingLineup(playerIds: string[]): void {
+        const unique = new Set<string>();
+        const valid = playerIds
+            .filter((id) => {
+                if (unique.has(id)) return false;
+                const exists = this.data.team.roster.some((p) => p.id === id);
+                if (exists) unique.add(id);
+                return exists;
+            })
+            .slice(0, 7);
+
+        if (valid.length < 7) {
+            for (const player of this.data.team.roster) {
+                if (valid.length >= 7) break;
+                if (!unique.has(player.id)) {
+                    valid.push(player.id);
+                    unique.add(player.id);
+                }
+            }
+        }
+
+        this.data.team.startingLineupIds = valid;
+        this.save();
     }
     
     setPlayerRole(playerId: string, role: 'handler' | 'cutter' | 'hybrid'): void {

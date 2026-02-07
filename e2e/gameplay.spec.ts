@@ -1,25 +1,19 @@
 import { test, expect } from '@playwright/test';
+import { MAIN_CANVAS_SELECTOR, startQuickMatch } from './helpers/navigation';
 
 test.describe('Gameplay Tests', () => {
     test.beforeEach(async ({ page }) => {
-        await page.goto('/');
-        await page.waitForTimeout(2000);
-
-        // Attempt to start a game
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Space');
-        await page.waitForTimeout(1500);
+        await startQuickMatch(page);
     });
 
     test('game starts and creates field', async ({ page }) => {
         // Check that canvas is rendering
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
 
         // Verify Three.js is actively rendering
         const isActivelyRendering = await page.evaluate(() => {
-            const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+            const canvas = document.querySelector('canvas[data-engine]') as HTMLCanvasElement;
             if (!canvas) return false;
 
             // Canvas should have dimensions
@@ -41,7 +35,7 @@ test.describe('Gameplay Tests', () => {
         await page.waitForTimeout(100);
 
         // Should not crash
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
     });
 
@@ -67,7 +61,7 @@ test.describe('Gameplay Tests', () => {
         await page.waitForTimeout(500);
 
         // Should not crash
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
     });
 
@@ -85,8 +79,9 @@ test.describe('Gameplay Tests', () => {
         });
 
         // Menu should appear or game should still be running
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
+        expect(typeof menuVisible).toBe('boolean');
     });
 
     test('multiple key combinations work', async ({ page }) => {
@@ -106,7 +101,7 @@ test.describe('Gameplay Tests', () => {
         await page.waitForTimeout(100);
 
         // Should handle it gracefully
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
     });
 
@@ -147,7 +142,7 @@ test.describe('Gameplay Tests', () => {
     });
 
     test('camera controls work (mouse look)', async ({ page }) => {
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         const box = await canvas.boundingBox();
 
         if (box) {
@@ -183,7 +178,7 @@ test.describe('Gameplay Tests', () => {
         await page.waitForTimeout(500);
 
         // Verify stability
-        const canvas = page.locator('canvas');
+        const canvas = page.locator(MAIN_CANVAS_SELECTOR);
         await expect(canvas).toBeVisible();
     });
 });

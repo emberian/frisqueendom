@@ -17,9 +17,18 @@ export class RosterManager {
     }
     
     private loadLineup(): void {
-        // Default lineup: first 7 players
         const roster = this.data.team.roster;
-        this.currentLineup = roster.slice(0, 7).map((player, i) => ({
+        const ids = Array.isArray(this.data.team.startingLineupIds)
+            ? this.data.team.startingLineupIds
+            : [];
+        const explicit = ids
+            .map((id) => roster.find((p) => p.id === id))
+            .filter((p): p is PlayerStats => !!p)
+            .slice(0, 7);
+        const selected =
+            explicit.length >= 7 ? explicit : roster.slice(0, 7);
+
+        this.currentLineup = selected.map((player, i) => ({
             position: i,
             playerId: player.id,
             role: player.role,
@@ -42,6 +51,7 @@ export class RosterManager {
             this.data.team.roster.some(p => p.id === slot.playerId)
         );
         this.currentLineup = validLineup.slice(0, 7);
+        this.data.team.startingLineupIds = this.currentLineup.map((slot) => slot.playerId);
     }
     
     swapLineupPositions(posA: number, posB: number): void {
@@ -66,6 +76,7 @@ export class RosterManager {
         
         slot.playerId = benchPlayerId;
         slot.role = benchPlayer.role;
+        this.data.team.startingLineupIds = this.currentLineup.map((s) => s.playerId);
         return true;
     }
     
