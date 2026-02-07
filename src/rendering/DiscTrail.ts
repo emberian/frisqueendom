@@ -10,6 +10,9 @@ export class DiscTrail {
     private head = 0;
     private count = 0;
     private trail: THREE.Vector3[] = [];
+    private teamR = 0.53;
+    private teamG = 0.8;
+    private teamB = 1.0;
 
     constructor(scene: THREE.Scene) {
         for (let i = 0; i < TRAIL_LENGTH; i++) {
@@ -48,10 +51,10 @@ export class DiscTrail {
             this.positions[i * 3 + 2] = p.z;
 
             const alpha = 1 - i / this.count;
-            // Blue-white trail
-            this.colors[i * 4] = 0.53 + 0.47 * alpha;
-            this.colors[i * 4 + 1] = 0.8 + 0.2 * alpha;
-            this.colors[i * 4 + 2] = 1.0;
+            // Team-colored trail, brightening toward white at newest point
+            this.colors[i * 4] = this.teamR + (1 - this.teamR) * alpha;
+            this.colors[i * 4 + 1] = this.teamG + (1 - this.teamG) * alpha;
+            this.colors[i * 4 + 2] = this.teamB + (1 - this.teamB) * alpha;
             this.colors[i * 4 + 3] = alpha;
         }
 
@@ -59,6 +62,12 @@ export class DiscTrail {
         this.geometry.attributes.color.needsUpdate = true;
         this.geometry.setDrawRange(0, this.count);
         this.line.visible = this.count > 1;
+    }
+
+    setTeamColor(hex: number): void {
+        this.teamR = ((hex >> 16) & 0xff) / 255;
+        this.teamG = ((hex >> 8) & 0xff) / 255;
+        this.teamB = (hex & 0xff) / 255;
     }
 
     clear(): void {

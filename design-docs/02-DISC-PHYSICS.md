@@ -89,6 +89,7 @@ The disc's velocity relative to the air (accounting for wind):
 ```
 v_rel = v_disc - v_wind(position)
 v_air = |v_rel|
+v_air_safe = max(v_air, 0.5)   // avoid divide-by-zero at near-rest speeds
 ```
 
 ### Angle of Attack (AoA)
@@ -143,7 +144,7 @@ F_drag = -F_drag_magnitude * normalize(v_rel)
 Small lateral force due to asymmetric airflow (from spin and sideslip):
 
 ```
-CS = 0.1 * beta + 0.001 * spin.y * diameter / (2 * v_air)  // Magnus-like
+CS = 0.1 * beta + 0.001 * spin.y * diameter / (2 * v_air_safe)  // Magnus-like
 F_side = 0.5 * rho * v_air^2 * area * CS * disc_right
 ```
 
@@ -168,7 +169,7 @@ This is the key driver of disc behavior. For most discs, `cm_alpha > 0`, meaning
 Aerodynamic damping of roll oscillations:
 
 ```
-C_roll = -0.005 * (spin.x * diameter) / (2 * v_air)
+C_roll = -0.005 * (spin.x * diameter) / (2 * v_air_safe)
 M_roll = 0.5 * rho * v_air^2 * area * diameter * C_roll
 torque_roll = M_roll * disc_forward
 ```
@@ -262,6 +263,13 @@ fn derivatives(state: &DiscState, wind: &WindField) -> DiscDerivatives {
 ### Timestep
 
 Physics should run at a **fixed timestep** of 1/240s (240 Hz) or higher, decoupled from rendering framerate. At 60fps, this means 4 physics substeps per frame. For very fast throws, consider adaptive substep counts.
+
+### Determinism Requirements
+
+For replay and competitive integrity, the disc simulation is hard-deterministic:
+- Same initial state + same wind samples + same throw inputs must produce identical state per tick.
+- No frame-time-scaled randomness or wall-clock access inside physics.
+- Physics updates are keyed by integer tick index (`tick += 1` at each `dt` step).
 
 ## Ground Effect
 

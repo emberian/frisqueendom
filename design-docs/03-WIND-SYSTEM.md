@@ -10,6 +10,16 @@ Wind is a first-class game mechanic in FrisQueendom. It transforms every throw f
 4. **Performant** -- must maintain 60fps in the browser
 5. **Deterministic** for a given seed -- replay consistency
 
+## Determinism Contract
+
+Wind simulation is hard-deterministic:
+
+- Match start generates a `wind_seed: u64` and stores it in match state.
+- Wind updates run on fixed simulation ticks only (never frame-time driven).
+- All stochastic behavior (base wander, turbulence phase offsets, gust spawn timing, thermal spawn) uses a deterministic PRNG stream derived from `wind_seed`.
+- No `Math.random()`, wall-clock time, or platform-dependent iteration order in wind logic.
+- Replays store `wind_seed` + tick-indexed gameplay inputs; wind must reproduce bit-for-bit from those values.
+
 ## Wind Field Architecture
 
 The wind is represented as a **3D vector field** sampled on a grid covering the playing area plus margins.
@@ -17,16 +27,16 @@ The wind is represented as a **3D vector field** sampled on a grid covering the 
 ### Grid Specification
 
 ```
-Field area: ~110m x 40m
+Regulation field footprint: 110yd x 40yd (~100.6m x 36.6m)
 Margin: 20m on each side
-Total simulation area: 150m x 80m x 30m (height)
+Grid-snapped simulation area: 144m x 80m x 30m (height)
 
-Horizontal resolution: 2m cells → 75 x 40 = 3,000 columns
+Horizontal resolution: 2m cells → 72 x 40 = 2,880 columns
 Vertical layers: 6 layers (0, 1, 3, 6, 12, 25m)
-Total cells: 18,000
+Total cells: 17,280
 
 Each cell: vec3 (12 bytes)
-Total memory: ~216 KB per field snapshot
+Total memory: ~207 KB per field snapshot
 ```
 
 This is small enough to update every frame on the CPU, but we may want GPU compute for higher fidelity or for the visual grass/particle simulation that needs per-pixel wind.
@@ -197,7 +207,11 @@ impl Thermal {
         // Thermal creates updraft in center, downdraft at edges (toroidal flow)
         let vertical = self.strength * (1.0 - 2.0 * (dist / self.radius).powi(2));
         let radial = self.strength * 0.3 * (dist / self.radius);
-        let radial_dir = normalize(pos.xz() - self.position);
+        let radial_dir = if dist > 0.001 {
+            normalize(pos.xz() - self.position)
+        } else {
+            Vec2::ZERO
+        };
 
         Vec3::new(radial_dir.x * radial, vertical * factor, radial_dir.y * radial)
     }
@@ -302,7 +316,7 @@ For higher-fidelity wind simulation, the wind field can be updated on the GPU us
 ### Compute Shader Architecture
 
 ```
-Buffer: windField[75][40][6] = vec4 (xyz velocity + temperature)
+Buffer: windField[72][40][6] = vec4 (xyz velocity + temperature)
 
 Pass 1: Advection
   - Each cell advects its velocity by the local velocity (semi-Lagrangian)
@@ -333,8 +347,8 @@ The WASM disc physics crate can use either GPU-sampled or CPU-sampled wind trans
 For browsers without WebGPU or on low-end hardware:
 
 ```
-Grid resolution: 5m cells → 30 x 16 = 480 columns, 3 height layers = 1,440 cells
-Update: every 3 frames (20Hz at 60fps)
+Grid resolution: 5m cells → 29 x 16 = 464 columns, 3 height layers = 1,392 cells
+Update: every 12 physics ticks (20Hz when simulation tick is 240Hz)
 Turbulence: 2 octaves of Perlin noise
 No pressure solve
 No advection

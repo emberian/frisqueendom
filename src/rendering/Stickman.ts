@@ -29,6 +29,7 @@ export class Stickman {
     private jerseyGeo: THREE.BufferGeometry;
     private lineMaterial: LineMaterial;
     private worldJoints = new Float32Array(JOINT_COUNT * 3);
+    private indicatorRing: THREE.Mesh;
 
     constructor(teamColor: number) {
         // Line material for bones
@@ -79,6 +80,20 @@ export class Stickman {
         });
         this.jerseyMesh = new THREE.Mesh(this.jerseyGeo, jerseyMat);
         this.group.add(this.jerseyMesh);
+
+        // Controlled player indicator ring
+        const ringGeo = new THREE.RingGeometry(0.5, 0.65, 32);
+        ringGeo.rotateX(-Math.PI / 2);
+        const ringMat = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.7,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+        });
+        this.indicatorRing = new THREE.Mesh(ringGeo, ringMat);
+        this.indicatorRing.visible = false;
+        this.group.add(this.indicatorRing);
     }
 
     updateFromJoints(
@@ -131,10 +146,19 @@ export class Stickman {
         jerseyPos.setXYZ(3, wj[5 * 3], wj[5 * 3 + 1], wj[5 * 3 + 2]); // R shoulder
         jerseyPos.needsUpdate = true;
         this.jerseyGeo.computeBoundingSphere();
+
+        // Update indicator ring position at player's feet
+        if (this.indicatorRing.visible) {
+            this.indicatorRing.position.set(position.x, 0.02, position.z);
+        }
     }
 
     updateResolution(width: number, height: number): void {
         this.lineMaterial.resolution.set(width, height);
+    }
+
+    setControlled(controlled: boolean): void {
+        this.indicatorRing.visible = controlled;
     }
 
     setJerseyColor(color: number): void {

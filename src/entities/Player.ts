@@ -2,14 +2,21 @@ import * as THREE from 'three';
 import { MovementController } from '../gameplay/Movement';
 import { Stickman } from '../rendering/Stickman';
 import {
+    JOINT_COUNT,
+    lerpPose,
     idlePose,
     runPose,
     sprintPose,
     holdingDiscIdlePose,
     throwingPose,
+    markingPose,
     layoutPose,
     celebrationPose,
+    celebrationFistPump,
+    celebrationSpike,
     frustrationPose,
+    frustrationArmsUp,
+    frustrationHeadDrop,
 } from '../rendering/Animation';
 import { PLAYER_JOG_SPEED } from '../data/Constants';
 import { STAT_MODIFIERS, ANIMATION_TIMINGS } from '../data/GameplayConstants';
@@ -28,10 +35,27 @@ export class Player {
     stats: PlayerStats | null = null;
     
     // Animation state
-    private animState: 'idle' | 'run' | 'sprint' | 'throw' | 'layout' | 'celebrate' | 'frustrated' = 'idle';
+    private animState: 'idle' | 'run' | 'sprint' | 'throw' | 'layout' | 'celebrate' | 'frustrated' | 'marking' = 'idle';
     private animTimer = 0;
     private layoutTarget: THREE.Vector3 | null = null;
     private layoutProgress = 0;
+
+    // Animation blending
+    private prevJoints = new Float32Array(JOINT_COUNT * 3);
+    private blendProgress = 1.0;
+    private readonly blendDuration = 0.15;
+    private prevAnimState: string = 'idle';
+
+    // Throw type for animation
+    private lastThrowType: 'backhand' | 'forehand' | 'hammer' | 'scoober' = 'backhand';
+
+    // Celebration/frustration variant
+    private celebrationVariant = 0;
+    private frustrationVariant = 0;
+
+    // Marking state
+    isMarking = false;
+    markStallIntensity = 0;
 
     constructor(
         team: TeamSide,
@@ -101,21 +125,38 @@ export class Player {
     }
     
     // Trigger throw animation
-    startThrow(): void {
-        this.animState = 'throw';
-        this.animTimer = 0;
+    startThrow(throwType?: string): void {
+        if (throwType) {
+            this.lastThrowType = throwType as typeof this.lastThrowType;
+        }
+        this.setAnimState('throw');
     }
-    
-    // Trigger celebration
+
+    // Trigger celebration (variant by player index for team variety)
     celebrate(): void {
-        this.animState = 'celebrate';
-        this.animTimer = 0;
+        this.celebrationVariant = this.index % 3;
+        this.setAnimState('celebrate');
     }
-    
-    // Trigger frustration
+
+    // Trigger frustration (variant by player index)
     frustrate(): void {
-        this.animState = 'frustrated';
-        this.animTimer = 0;
+        this.frustrationVariant = this.index % 3;
+        this.setAnimState('frustrated');
+    }
+
+    // Set marking animation state
+    setMarking(active: boolean, stallIntensity: number): void {
+        this.isMarking = active;
+        this.markStallIntensity = stallIntensity;
+    }
+
+    private setAnimState(state: typeof this.animState): void {
+        if (state !== this.animState) {
+            this.prevAnimState = this.animState;
+            this.blendProgress = 0;
+            this.animState = state;
+            this.animTimer = 0;
+        }
     }
 
     update(
@@ -152,74 +193,91 @@ export class Player {
         // Animation state machine
         const speed = this.movement.velocity.length();
         const time = performance.now() / 1000;
-        let joints: Float32Array;
+        let targetJoints: Float32Array;
 
         switch (this.animState) {
             case 'throw':
                 this.animTimer += dt;
-                joints = throwingPose(this.animTimer, this.getThrowType());
+                targetJoints = throwingPose(this.animTimer, this.lastThrowType);
                 if (this.animTimer > 0.5) {
-                    this.animState = 'idle';
+                    this.setAnimState('idle');
                 }
                 break;
-                
+
             case 'layout':
-                joints = layoutPose(this.layoutProgress);
+                targetJoints = layoutPose(this.layoutProgress);
                 break;
-                
+
             case 'celebrate':
                 this.animTimer += dt;
-                joints = celebrationPose(this.animTimer);
+                switch (this.celebrationVariant) {
+                    case 1: targetJoints = celebrationFistPump(this.animTimer); break;
+                    case 2: targetJoints = celebrationSpike(this.animTimer); break;
+                    default: targetJoints = celebrationPose(this.animTimer); break;
+                }
                 if (this.animTimer > 3) {
-                    this.animState = 'idle';
+                    this.setAnimState('idle');
                 }
                 break;
-                
+
             case 'frustrated':
                 this.animTimer += dt;
-                joints = frustrationPose(this.animTimer);
+                switch (this.frustrationVariant) {
+                    case 1: targetJoints = frustrationArmsUp(this.animTimer); break;
+                    case 2: targetJoints = frustrationHeadDrop(this.animTimer); break;
+                    default: targetJoints = frustrationPose(this.animTimer); break;
+                }
                 if (this.animTimer > 2) {
-                    this.animState = 'idle';
+                    this.setAnimState('idle');
                 }
                 break;
-                
-            default: // idle, run, sprint based on movement
+
+            default: // idle, run, sprint, marking based on movement
                 if (this.holdingDisc && speed < 0.5) {
-                    joints = holdingDiscIdlePose(time);
+                    targetJoints = holdingDiscIdlePose(time);
                     this.animState = 'idle';
+                } else if (this.isMarking && speed < 1.0) {
+                    targetJoints = markingPose(time, this.markStallIntensity);
+                    this.animState = 'marking';
                 } else if (speed < 0.5) {
-                    joints = idlePose(time);
+                    targetJoints = idlePose(time);
                     this.animState = 'idle';
                 } else {
                     const isSprinting = speed > PLAYER_JOG_SPEED + 1;
                     const stride = isSprinting ? 2.0 : 1.5;
                     this.animPhase += (speed / stride) * dt;
                     this.animPhase %= 1.0;
-                    joints = isSprinting
+                    targetJoints = isSprinting
                         ? sprintPose(speed, this.animPhase)
                         : runPose(speed, this.animPhase);
                     this.animState = isSprinting ? 'sprint' : 'run';
                 }
         }
 
+        // Animation blending
+        let joints: Float32Array;
+        if (this.blendProgress < 1.0) {
+            this.blendProgress = Math.min(1.0, this.blendProgress + dt / this.blendDuration);
+            const t = this.blendProgress * this.blendProgress * (3 - 2 * this.blendProgress); // smoothstep
+            joints = lerpPose(this.prevJoints, targetJoints, t);
+        } else {
+            joints = targetJoints;
+        }
+        // Snapshot for next blend
+        this.prevJoints.set(joints);
+
         this.stickman.updateFromJoints(
             joints,
             this.movement.position,
             this.movement.facing,
         );
-        
-        // Update stats fatigue
+
+        // Update controlled player indicator
+        this.stickman.setControlled(this.isControlled);
+
+        // Sync stats stamina from movement (single source of truth)
         if (this.stats) {
-            const isSprinting = this.animState === 'sprint';
-            const isRunning = this.animState === 'run';
-            if (isSprinting) {
-                this.stats.currentStamina -= 20 * dt;
-            } else if (isRunning) {
-                this.stats.currentStamina += 5 * dt;
-            } else {
-                this.stats.currentStamina += 15 * dt;
-            }
-            this.stats.currentStamina = Math.max(0, Math.min(this.stats.attributes.stamina, this.stats.currentStamina));
+            this.stats.currentStamina = this.movement.stamina;
         }
     }
     

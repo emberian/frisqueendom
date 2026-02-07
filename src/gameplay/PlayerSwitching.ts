@@ -5,6 +5,12 @@ import type { Disc } from '../entities/Disc';
 export class PlayerSwitching {
     controlledPlayer: Player | null = null;
 
+    clearControl(): void {
+        if (!this.controlledPlayer) return;
+        this.controlledPlayer.isControlled = false;
+        this.controlledPlayer = null;
+    }
+
     switchToNext(team: Team): void {
         if (!this.controlledPlayer) {
             this.switchTo(team.players[0]);
@@ -16,9 +22,7 @@ export class PlayerSwitching {
     }
 
     switchTo(player: Player): void {
-        if (this.controlledPlayer) {
-            this.controlledPlayer.isControlled = false;
-        }
+        this.clearControl();
         this.controlledPlayer = player;
         player.isControlled = true;
     }

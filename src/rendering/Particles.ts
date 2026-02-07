@@ -92,6 +92,55 @@ export class ParticleSystem {
         }
     }
 
+    emitRainDrop(fieldWidth: number, fieldLength: number): void {
+        if (this.particles.length >= MAX_PARTICLES) return;
+
+        // Spawn rain particles from above field
+        const x = (Math.random() - 0.5) * fieldWidth;
+        const z = (Math.random() - 0.5) * fieldLength;
+        const y = 20 + Math.random() * 5;
+
+        this.particles.push({
+            position: new THREE.Vector3(x, y, z),
+            velocity: new THREE.Vector3(
+                (Math.random() - 0.5) * 0.5, // slight horizontal drift
+                -12 - Math.random() * 2, // fast downward
+                (Math.random() - 0.5) * 0.5,
+            ),
+            life: 2.0,
+            maxLife: 2.0,
+            color: new THREE.Color(0x9999bb),
+            size: 0.03 + Math.random() * 0.02,
+        });
+    }
+
+    emitWindDust(origin: THREE.Vector3, windDir: THREE.Vector2, windSpeed: number): void {
+        if (this.particles.length >= MAX_PARTICLES - 5) return;
+
+        // Small dust/pollen particles carried by wind
+        const count = 3;
+        for (let i = 0; i < count; i++) {
+            this.particles.push({
+                position: origin.clone().add(
+                    new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.5,
+                        Math.random() * 0.3,
+                        (Math.random() - 0.5) * 0.5,
+                    ),
+                ),
+                velocity: new THREE.Vector3(
+                    windDir.x * windSpeed * 0.5 + (Math.random() - 0.5) * 0.3,
+                    0.2 + Math.random() * 0.3,
+                    windDir.y * windSpeed * 0.5 + (Math.random() - 0.5) * 0.3,
+                ),
+                life: 1.5 + Math.random() * 0.5,
+                maxLife: 2.0,
+                color: new THREE.Color(0xccbb99),
+                size: 0.02 + Math.random() * 0.01,
+            });
+        }
+    }
+
     update(dt: number): void {
         let alive = 0;
         for (let i = 0; i < this.particles.length; i++) {

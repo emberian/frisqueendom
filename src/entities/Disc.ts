@@ -15,6 +15,9 @@ export class Disc {
     mesh: THREE.Group;
     justCaught = false;
     thrownByTeam: 'home' | 'away' | null = null;
+    isRolling = false;
+    private rollTimer = 0;
+    private hasSkipped = false;
 
     constructor(sim: DiscSimulator, scene: THREE.Scene) {
         this.bridge = new DiscBridge(sim);
@@ -50,6 +53,8 @@ export class Disc {
             this.updateHeld();
         } else if (this.state === 'in_flight') {
             this.updateFlight(dt);
+        } else if (this.state === 'on_ground' && this.isRolling) {
+            this.updateRolling(dt);
         }
     }
 
@@ -74,7 +79,83 @@ export class Disc {
 
         if (this.bridge.isGrounded()) {
             this.previousState = this.state;
+            this.handleGroundImpact();
+        }
+    }
+
+    private handleGroundImpact(): void {
+        const speed = Math.sqrt(
+            this.velocity.x * this.velocity.x +
+            this.velocity.z * this.velocity.z
+        );
+
+        // Calculate impact angle (degrees from horizontal)
+        const impactAngle = Math.abs(Math.atan2(this.velocity.y, speed)) * (180 / Math.PI);
+
+        if (speed > 8.0 && impactAngle < 30 && !this.hasSkipped) {
+            // Skip: bounce once, lose 50% speed
+            this.velocity.multiplyScalar(0.5);
+            this.velocity.y = Math.abs(this.velocity.y) * 0.3; // Small bounce
+            this.hasSkipped = true;
+            this.state = 'in_flight'; // Stay in flight briefly
+        } else if (speed > 5.0 && impactAngle >= 30 && impactAngle < 60) {
+            // Cartwheel: roll on edge for 1-2 seconds
             this.state = 'on_ground';
+            this.isRolling = true;
+            this.rollTimer = 1.0 + Math.random(); // 1-2 seconds
+            this.velocity.y = 0;
+        } else {
+            // Flat landing: stop immediately
+            this.state = 'on_ground';
+            this.velocity.set(0, 0, 0);
+            this.isRolling = false;
+            this.hasSkipped = false;
+        }
+    }
+
+    private updateRolling(dt: number): void {
+        this.rollTimer -= dt;
+
+        if (this.rollTimer <= 0) {
+            // Stop rolling
+            this.isRolling = false;
+            this.velocity.set(0, 0, 0);
+            this.hasSkipped = false;
+            return;
+        }
+
+        // Continue rolling with deceleration
+        const deceleration = 3.0; // m/s^2
+        const currentSpeed = Math.sqrt(
+            this.velocity.x * this.velocity.x +
+            this.velocity.z * this.velocity.z
+        );
+
+        if (currentSpeed > 0.1) {
+            const newSpeed = Math.max(0, currentSpeed - deceleration * dt);
+            const scale = newSpeed / currentSpeed;
+            this.velocity.x *= scale;
+            this.velocity.z *= scale;
+
+            // Update position
+            this.position.x += this.velocity.x * dt;
+            this.position.z += this.velocity.z * dt;
+            this.mesh.position.copy(this.position);
+
+            // Rotate disc on edge (cartwheel effect)
+            const rollAngle = (performance.now() / 1000) * Math.PI * 2;
+            this.mesh.quaternion.setFromAxisAngle(
+                new THREE.Vector3(
+                    -this.velocity.z,
+                    0,
+                    this.velocity.x
+                ).normalize(),
+                rollAngle
+            );
+        } else {
+            this.isRolling = false;
+            this.velocity.set(0, 0, 0);
+            this.hasSkipped = false;
         }
     }
 
@@ -87,5 +168,8 @@ export class Disc {
         this.holder = null;
         this.justCaught = false;
         this.thrownByTeam = null;
+        this.isRolling = false;
+        this.rollTimer = 0;
+        this.hasSkipped = false;
     }
 }

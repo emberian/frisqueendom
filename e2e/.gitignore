@@ -1,0 +1,4 @@
+# Playwright output directories
+/test-results/
+/playwright-report/
+/playwright/.cache/

@@ -26,3 +26,5 @@ export type TeamSide = 'home' | 'away';
 export type PlayerRole = 'handler' | 'cutter' | 'deep_cutter';
 export type MatchPhase = 'pre_pull' | 'pulling' | 'live_play' | 'turnover_reset' | 'score' | 'point_reset';
 export type DiscLifecycle = 'held' | 'in_flight' | 'on_ground';
+export type OffenseFormation = 'vertical_stack' | 'horizontal_stack';
+export type DefenseFormation = 'man' | 'zone_331';

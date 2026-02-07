@@ -10,7 +10,7 @@ Stickmen don't have faces (well, barely). They communicate entirely through body
 
 ### Skeleton
 
-Each stickman has a 12-joint skeleton:
+Each stickman has a 13-joint skeleton:
 
 ```
 Joints:

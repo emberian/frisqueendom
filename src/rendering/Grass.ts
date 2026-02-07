@@ -26,7 +26,6 @@ export class GrassField {
         const mat = new THREE.MeshLambertMaterial({
             color: 0xffffff,
             side: THREE.DoubleSide,
-            vertexColors: true,
         });
 
         this.mesh = new THREE.InstancedMesh(geo, mat, BLADE_COUNT);

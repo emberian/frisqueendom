@@ -157,6 +157,13 @@ All non-controlled players are AI-driven. The AI must be good enough that:
                     └─────────────┘
 ```
 
+### AI Determinism
+
+For replay fidelity and fair challenge validation:
+- AI decisions execute on fixed decision ticks (10Hz/5Hz as specified), not frame time.
+- Any stochastic tiebreakers (e.g., similarly scored throw options) use deterministic match RNG streams.
+- Decision evaluation over candidate sets must be order-stable (sort by stable player IDs before scoring/selecting).
+
 ### Strategic Layer (Team AI)
 
 The strategic layer manages team-level decisions. It runs at ~2Hz (every 0.5s) and sets the general plan:

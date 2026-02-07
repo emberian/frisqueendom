@@ -27,6 +27,13 @@ export class PointFlow {
         const holder = disc.holder;
         const offenseHasDisc = holder ? offenseTeam.players.includes(holder) : false;
 
+        // Defensive possession in live play should always force a turnover,
+        // even if the catch event happened before live_play began.
+        if (disc.state === 'held' && holder && !offenseHasDisc) {
+            this.triggerTurnover('interception');
+            return;
+        }
+
         // Stall count
         if (disc.state === 'held' && offenseHasDisc) {
             this.stallActive = true;
@@ -48,18 +55,14 @@ export class PointFlow {
             }
         }
 
-        // Turnover: disc hits ground from flight
-        if (
-            disc.state === 'on_ground' &&
-            disc.previousState === 'in_flight'
-        ) {
-            this.triggerTurnover('incomplete');
-            return;
-        }
-
-        // Out of bounds
-        if (disc.state === 'on_ground' && !isInBounds(disc.position)) {
-            this.triggerTurnover('out_of_bounds');
+        // Turnover on landing is processed once per flight.
+        // Consume the in-flight marker so turnover_reset -> live_play
+        // cannot retrigger from the same grounded disc.
+        if (disc.state === 'on_ground' && disc.previousState === 'in_flight') {
+            disc.previousState = 'on_ground';
+            this.triggerTurnover(
+                isInBounds(disc.position) ? 'incomplete' : 'out_of_bounds',
+            );
             return;
         }
 

@@ -9,7 +9,9 @@ export class HUD {
     private controlsEl: HTMLDivElement;
     private helpHintEl: HTMLDivElement;
     private helpOverlayEl: HTMLDivElement;
+    private spiritEl: HTMLDivElement;
     private helpVisible = false;
+    private touchMode = false;
     private contextSignature = '';
     private homeTeamName = 'Home';
     private awayTeamName = 'Away';
@@ -20,6 +22,9 @@ export class HUD {
             this.setHelpVisible(!this.helpVisible);
             e.preventDefault();
         }
+    };
+    private readonly onResize = () => {
+        this.applyResponsiveLayout();
     };
 
     constructor() {
@@ -107,12 +112,31 @@ export class HUD {
         this.helpOverlayEl.innerHTML = buildHelpOverlayHtml();
         ui.appendChild(this.helpOverlayEl);
 
+        // Spirit score indicator
+        this.spiritEl = document.createElement('div');
+        this.spiritEl.style.cssText =
+            'position:absolute;top:38px;right:14px;padding:5px 9px;border-radius:8px;' +
+            'background:rgba(5,16,30,0.82);border:1px solid rgba(255,255,255,0.22);' +
+            'font-family:monospace;font-size:11px;color:rgba(255,255,255,0.9);' +
+            'text-shadow:0 2px 6px rgba(0,0,0,0.65);';
+        this.spiritEl.textContent = 'Spirit 10/10';
+        ui.appendChild(this.spiritEl);
+
         window.addEventListener('keydown', this.onKeyDown);
+        window.addEventListener('resize', this.onResize);
+        this.applyResponsiveLayout();
     }
 
     updateScore(home: number, away: number): void {
         const homeInitials = getInitials(this.homeTeamName);
         const awayInitials = getInitials(this.awayTeamName);
+        if (window.innerWidth <= 920) {
+            this.scoreEl.innerHTML =
+                `<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:${this.homeTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${homeInitials}</span><span style="color:${this.homeTeamColor};">${homeInitials}</span> <span style="color:white;">${home}</span></span>` +
+                `<span style="padding:0 6px;color:rgba(255,255,255,0.45);">|</span>` +
+                `<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:${this.awayTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${awayInitials}</span><span style="color:${this.awayTeamColor};">${awayInitials}</span> <span style="color:white;">${away}</span></span>`;
+            return;
+        }
         this.scoreEl.innerHTML =
             `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${this.homeTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${homeInitials}</span><span style="color:${this.homeTeamColor};">${escapeHtml(this.homeTeamName.toUpperCase())}</span> <span style="color:white;">${home}</span></span>` +
             `<span style="padding:0 9px;color:rgba(255,255,255,0.45);">|</span>` +
@@ -162,6 +186,11 @@ export class HUD {
     }
 
     updateContext(context: HUDContext): void {
+        if (this.touchMode) {
+            this.controlsEl.innerHTML = '';
+            return;
+        }
+
         const signature = `${context.phase}|${context.hasDisc}|${context.isPlayerOnOffense}|${context.isPlayerPulling}|${context.quickReleaseAvailable}`;
         if (signature === this.contextSignature) {
             return;
@@ -176,7 +205,12 @@ export class HUD {
     }
     
     updateSpirit(spiritScore: number): void {
-        // Could add a spirit display element
+        const clamped = Math.max(0, Math.min(10, spiritScore));
+        let color = '#38d67a'; // green
+        if (clamped < 4) color = '#ff4f5e'; // red
+        else if (clamped < 7) color = '#ffc646'; // yellow
+        this.spiritEl.innerHTML =
+            `Spirit <span style="color:${color};font-weight:bold;">${clamped.toFixed(0)}</span>/10`;
     }
 
     setHelpVisible(visible: boolean): void {
@@ -184,9 +218,21 @@ export class HUD {
         this.helpOverlayEl.style.display = visible ? 'flex' : 'none';
         this.helpHintEl.style.opacity = visible ? '0.35' : '1';
     }
+
+    setTouchMode(enabled: boolean): void {
+        this.touchMode = enabled;
+        if (enabled) {
+            this.contextSignature = '';
+            this.controlsEl.innerHTML = '';
+            this.helpVisible = false;
+            this.helpOverlayEl.style.display = 'none';
+        }
+        this.applyResponsiveLayout();
+    }
     
     destroy(): void {
         window.removeEventListener('keydown', this.onKeyDown);
+        window.removeEventListener('resize', this.onResize);
         this.scoreEl.remove();
         this.stallBar.remove();
         this.stallLabelEl.remove();
@@ -196,6 +242,96 @@ export class HUD {
         this.controlsEl.remove();
         this.helpHintEl.remove();
         this.helpOverlayEl.remove();
+        this.spiritEl.remove();
+    }
+
+    private applyResponsiveLayout(): void {
+        const isMobile = window.innerWidth <= 700;
+        const isCompact = window.innerWidth <= 920;
+        const showKeyboardHints = !this.touchMode && !isCompact;
+
+        if (isCompact) {
+            this.scoreEl.style.top = isMobile ? '8px' : '10px';
+            this.scoreEl.style.padding = isMobile ? '6px 10px' : '7px 12px';
+            this.scoreEl.style.fontSize = isMobile ? '14px' : '15px';
+            this.scoreEl.style.maxWidth = isMobile ? '82vw' : '68vw';
+            this.scoreEl.style.overflow = 'hidden';
+            this.scoreEl.style.textOverflow = 'ellipsis';
+            this.scoreEl.style.whiteSpace = 'nowrap';
+
+            this.windEl.style.top = isMobile ? '52px' : '56px';
+            this.windEl.style.left = isMobile ? '8px' : '12px';
+            this.windEl.style.padding = isMobile ? '5px 8px' : '6px 9px';
+            this.windEl.style.fontSize = isMobile ? '10px' : '11px';
+            this.windEl.style.maxWidth = isMobile ? '40vw' : '30vw';
+            this.windEl.style.overflow = 'hidden';
+            this.windEl.style.textOverflow = 'ellipsis';
+            this.windEl.style.whiteSpace = 'nowrap';
+
+            this.phaseEl.style.top = isMobile ? '52px' : '56px';
+            this.phaseEl.style.right = isMobile ? '8px' : '12px';
+            this.phaseEl.style.padding = isMobile ? '5px 8px' : '6px 9px';
+            this.phaseEl.style.fontSize = isMobile ? '10px' : '11px';
+            this.phaseEl.style.maxWidth = isMobile ? '40vw' : '30vw';
+            this.phaseEl.style.overflow = 'hidden';
+            this.phaseEl.style.textOverflow = 'ellipsis';
+            this.phaseEl.style.whiteSpace = 'nowrap';
+
+            this.spiritEl.style.top = isMobile ? '76px' : '82px';
+            this.spiritEl.style.right = isMobile ? '8px' : '12px';
+            this.spiritEl.style.fontSize = isMobile ? '10px' : '11px';
+
+            this.stallBar.style.top = isMobile ? '80px' : '84px';
+            this.stallBar.style.width = isMobile ? '180px' : '200px';
+            this.stallLabelEl.style.top = isMobile ? '96px' : '100px';
+
+            this.controlsEl.style.bottom = isMobile ? '112px' : '16px';
+            this.controlsEl.style.fontSize = isMobile ? '11px' : '12px';
+            this.helpHintEl.style.bottom = isMobile ? '104px' : '16px';
+            this.controlsEl.style.display = showKeyboardHints ? 'flex' : 'none';
+            this.helpHintEl.style.display = showKeyboardHints ? 'block' : 'none';
+            return;
+        }
+
+        this.scoreEl.style.top = '14px';
+        this.scoreEl.style.padding = '8px 16px';
+        this.scoreEl.style.fontSize = '17px';
+        this.scoreEl.style.maxWidth = '';
+        this.scoreEl.style.overflow = '';
+        this.scoreEl.style.textOverflow = '';
+        this.scoreEl.style.whiteSpace = '';
+
+        this.windEl.style.top = '14px';
+        this.windEl.style.left = '14px';
+        this.windEl.style.padding = '7px 10px';
+        this.windEl.style.fontSize = '12px';
+        this.windEl.style.maxWidth = '';
+        this.windEl.style.overflow = '';
+        this.windEl.style.textOverflow = '';
+        this.windEl.style.whiteSpace = '';
+
+        this.phaseEl.style.top = '14px';
+        this.phaseEl.style.right = '14px';
+        this.phaseEl.style.padding = '7px 10px';
+        this.phaseEl.style.fontSize = '11px';
+        this.phaseEl.style.maxWidth = '';
+        this.phaseEl.style.overflow = '';
+        this.phaseEl.style.textOverflow = '';
+        this.phaseEl.style.whiteSpace = '';
+
+        this.spiritEl.style.top = '38px';
+        this.spiritEl.style.right = '14px';
+        this.spiritEl.style.fontSize = '11px';
+
+        this.stallBar.style.top = '56px';
+        this.stallBar.style.width = '220px';
+        this.stallLabelEl.style.top = '74px';
+
+        this.controlsEl.style.bottom = '14px';
+        this.controlsEl.style.fontSize = '12px';
+        this.helpHintEl.style.bottom = '16px';
+        this.controlsEl.style.display = showKeyboardHints ? 'flex' : 'none';
+        this.helpHintEl.style.display = showKeyboardHints ? 'block' : 'none';
     }
 }
 
@@ -361,6 +497,16 @@ function buildHelpOverlayHtml(): string {
         ['C', 'Call timeout'],
         ['V', 'Call foul (spirit system)'],
         ['H', 'Toggle this controls panel'],
+    ])}
+    ${renderHelpSection('Gamepad', [
+        ['LS', 'Move'],
+        ['RS', 'Aim throw direction'],
+        ['RT / LT', 'Throw hold / forehand hold'],
+        ['A', 'Jump / quick release'],
+        ['X / Start', 'Switch player / pause'],
+        ['Y / B / RB', 'Hammer / blade / thumber'],
+        ['DPad Up/Down', 'High / low release'],
+        ['DPad Left/Right', 'Hyzer / anhyzer curve'],
     ])}
   </div>
 </div>`;

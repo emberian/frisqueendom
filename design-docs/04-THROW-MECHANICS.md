@@ -70,7 +70,7 @@ Best for: Short-range touch passes over a mark, endzone plays. Requires finesse.
 
 ### Advanced Throws
 
-Unlocked through play or training in Management Mode:
+Unlocked through play or training in Management Mode (primary throws remain available from the start):
 
 #### 5. Thumber
 Overhead throw with thumb on inside of rim. Opposite spin to hammer.
@@ -207,7 +207,7 @@ When the player releases the mouse button:
    - nose_angle (from Ctrl modifier)
 
 2. Apply player stats:
-   - accuracy: perturb aim direction by random amount scaled by (1 - accuracy)
+   - accuracy: perturb aim direction by deterministic RNG sample scaled by (1 - accuracy)
    - power_stat: scale max speed by power_stat
    - spin: compute spin rate from grip, power, and spin_stat
    - oat: compute wobble from difficulty, power, mark_pressure, oat_stat
@@ -280,6 +280,8 @@ The preview arc is one of FrisQueendom's signature features:
 ```
 
 The preview is NOT cheating -- real ultimate players visualize their throws before releasing. The preview just makes this intuition visible. On higher difficulties, the preview becomes shorter and less precise (more transparency in the uncertain zone).
+
+All throw-shaping parameters (power, release angle, height, nose angle, grip selection) must be available on mobile touch controls with mechanical parity to desktop.
 
 ## Throw Strategy Guide (In-Game Tips)
 
@@ -363,6 +365,8 @@ Outcomes:
   - Both miss (disc falls → turnover unless tipped to another player)
   - Foul (contact before disc arrival → foul call, Spirit system)
 ```
+
+All probabilistic outcomes above (release perturbation, handblock chance, bobble recovery, contested outcomes) must use the deterministic match RNG stream keyed by simulation tick and actor IDs.
 
 ### The Sky
 

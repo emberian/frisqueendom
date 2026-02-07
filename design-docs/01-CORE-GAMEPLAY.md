@@ -9,13 +9,14 @@ FrisQueendom simulates this faithfully, with adaptations for the fact that you c
 ## Field Dimensions
 
 ```
-|<------------ 100m (110yd) total ----------->|
+|<--------- 110yd total (~100.6m) ---------->|
 |                                               |
 |  ENDZONE    PLAYING FIELD        ENDZONE      |
-|  (18m)      (64m / 70yd)        (18m)        |
+|  (20yd /    (70yd / ~64m)       (20yd /      |
+|   ~18.3m)                        ~18.3m)      |
 |             ← brick mark (20m from endzone)   |
 |                                               |
-|<--37m (40yd) wide----------------------------------->|
+|<--40yd wide (~36.6m)------------------------------->|
 ```
 
 The field is rendered in 3D with perspective. The grass has procedural texture with visible wind effects (blades bending, ripples). Field lines are painted on the ground. Cones mark the corners.
@@ -86,7 +87,7 @@ Your 6 teammates are AI-controlled. Their behavior depends on the playbook (see 
 | A/D | Strafe left/right |
 | Shift (hold) | Sprint (drains stamina) |
 | Space | Jump / Layout (dive for disc) |
-| E | Switch controlled player |
+| E | Quick-switch to best contextual teammate/defender |
 
 ### Throwing (When holding disc)
 
@@ -107,7 +108,7 @@ Your 6 teammates are AI-controlled. Their behavior depends on the playbook (see 
 | Left Mouse | Attempt block/handblock (when marking) |
 | Right Mouse | Attempt interception (when downfield, bid for disc) |
 | Space | Layout block (diving attempt -- risky but spectacular) |
-| Tab | Switch to mark nearest receiver |
+| R | Lock mark target to nearest receiver (toggle) |
 
 ### General
 
@@ -115,8 +116,10 @@ Your 6 teammates are AI-controlled. Their behavior depends on the playbook (see 
 |-------|--------|
 | C | Call timeout (limited per half) |
 | V | Call foul (triggers Spirit of the Game system) |
-| Tab | Cycle controlled player |
+| Tab | Cycle controlled player (manual) |
 | P / Esc | Pause menu |
+
+Mobile uses the same mechanics with touch mappings described in `10-UI-UX.md` (no simplified throw model).
 
 ### Throw Aiming System
 

@@ -79,6 +79,33 @@ Design:
 Acceptance criteria:
 - New users complete first point without confusion on available actions.
 
+### Slice F: Spectator Director Mode
+Status: `in progress`
+
+Design:
+- Watch-only mode with no required player inputs.
+- Director camera presets (auto, broadcast, disc, home focus, away focus).
+- Clear transport controls (pause/play + speed presets + keyboard parity).
+- Status rail showing active camera, speed, phase, and offense.
+
+Acceptance criteria:
+- A match can run start-to-finish with no user gameplay actions.
+- Spectator controls are discoverable on desktop and touch.
+- Camera mode and speed changes are instant and legible.
+
+### Slice G: Mobile Control Legibility
+Status: `in progress`
+
+Design:
+- Compact top HUD at phone + tablet widths to prevent score/wind/phase collisions.
+- Touch controls split into core actions vs advanced tools to reduce clutter.
+- Mobile removes keyboard hint chips when touch controls are active.
+
+Acceptance criteria:
+- No overlap among score, wind, and phase chips from small phones to tablets.
+- Core throw/move controls remain reachable with thumbs in portrait mode.
+- Advanced throw modifiers stay accessible but non-intrusive.
+
 ## Implementation Notes
 
 - Keep all presentation overlays in isolated UI modules (`src/ui/*`) with clear lifecycle (`show/update/hide/destroy`).

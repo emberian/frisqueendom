@@ -125,9 +125,9 @@ Earned through play, never purchasable (no MTX in FrisQueendom):
 
 | Unlock | How | Description |
 |--------|-----|-------------|
-| **Forehand throws** | Complete tutorial | Basic forehand available to all players |
-| **Hammer** | Win 5 games | Overhead throw unlocked |
-| **Scoober** | Score 10 goals | Upside-down forehand unlocked |
+| **Forehand Mastery I** | Complete tutorial | Forehand is baseline; unlock reduces release variance and wobble |
+| **Hammer Mastery I** | Win 5 games | Hammer is baseline; unlock improves control and spin consistency |
+| **Scoober Mastery I** | Score 10 goals | Scoober is baseline; unlock improves touch accuracy |
 | **Thumber** | Complete "Throw Master" challenge | Overhead variant |
 | **Blade** | Master wind reading challenge | Vertical throw |
 | **Zone Defense** | Reach Division 3 | Zone defensive plays unlocked |

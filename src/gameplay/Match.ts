@@ -64,6 +64,14 @@ export class Match {
         return this.pullingTeam === this.playerTeam;
     }
 
+    isTeamOnOffense(team: TeamSide): boolean {
+        return this.offenseTeam === team;
+    }
+
+    isTeamPulling(team: TeamSide): boolean {
+        return this.pullingTeam === team;
+    }
+
     update(
         dt: number,
         homeTeam: Team,
@@ -83,7 +91,7 @@ export class Match {
                 this.handleLivePlay(dt, homeTeam, awayTeam, disc);
                 break;
             case 'turnover_reset':
-                this.handleTurnoverReset(dt, disc);
+                this.handleTurnoverReset(dt, disc, homeTeam, awayTeam);
                 break;
             case 'score':
                 this.handleScore(dt);
@@ -197,10 +205,39 @@ export class Match {
         }
     }
 
-    private handleTurnoverReset(dt: number, disc: Disc): void {
+    private handleTurnoverReset(
+        dt: number,
+        disc: Disc,
+        homeTeam: Team,
+        awayTeam: Team,
+    ): void {
         this.phaseTimer += dt;
         if (this.phaseTimer > 1.0) {
-            // Auto-pickup: disc stays where it is, new offense picks up
+            // Ensure the new offense legally owns the disc before resuming.
+            const offense =
+                this.offenseTeam === 'home' ? homeTeam : awayTeam;
+            const offenseHasDisc =
+                disc.holder !== null && offense.players.includes(disc.holder);
+
+            if (!offenseHasDisc) {
+                let pickupTarget = offense.players[0];
+                let nearestDistSq = Infinity;
+                for (const p of offense.players) {
+                    const distSq = p.movement.position.distanceToSquared(
+                        disc.position,
+                    );
+                    if (distSq < nearestDistSq) {
+                        nearestDistSq = distSq;
+                        pickupTarget = p;
+                    }
+                }
+
+                if (disc.holder && disc.holder !== pickupTarget) {
+                    disc.holder.holdingDisc = false;
+                }
+                disc.pickup(pickupTarget);
+            }
+
             this.phase = 'live_play';
             this.point.start();
         }

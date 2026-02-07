@@ -6,8 +6,23 @@ import {
     type GameSettings,
 } from '../data/SaveLoad';
 import { CareerManager } from '../management/Career';
+import { practiceManager, type DrillType } from '../gameplay/Practice';
 
-export type MenuState = 'title' | 'main_menu' | 'career_menu' | 'match_setup' | 'settings' | 'credits' | 'none';
+export type MenuState = 'title' | 'main_menu' | 'career_menu' | 'match_setup' | 'settings' | 'credits' | 'practice_menu' | 'none';
+
+export type MultiplayerMode = 'single' | 'local_split' | 'lan_remote';
+
+export interface QuickMatchConfig {
+    color: string;
+    difficulty: string;
+    gameTo: number;
+    multiplayerMode: MultiplayerMode;
+    spectatorMode?: boolean;
+    lanServerUrl?: string;
+    lanRoom?: string;
+    timeOfDay?: string;
+    weather?: string;
+}
 
 export class MenuSystem {
     private container: HTMLElement;
@@ -58,6 +73,9 @@ export class MenuSystem {
             case 'credits':
                 this.renderCredits();
                 break;
+            case 'practice_menu':
+                this.renderPracticeMenu();
+                break;
         }
     }
     
@@ -101,7 +119,9 @@ export class MenuSystem {
                 ${hasCareer ? `<button class="menu-btn" id="continue-career">Continue Career</button>` : ''}
                 <button class="menu-btn" id="new-career">New Career</button>
                 <button class="menu-btn" id="quick-match">Quick Match</button>
+                <button class="menu-btn" id="watch-match">Watch Match</button>
                 <button class="menu-btn" id="practice">Practice Mode</button>
+                <button class="menu-btn" id="tutorial">Tutorial</button>
                 <button class="menu-btn" id="settings">Settings</button>
                 <button class="menu-btn" id="credits">Credits</button>
                 ${hasSave ? `<button class="menu-btn danger" id="delete-save">Delete Save</button>` : ''}
@@ -120,14 +140,20 @@ export class MenuSystem {
         menu.querySelector('#quick-match')?.addEventListener('click', () => {
             this.setState('match_setup');
         });
-        
-        menu.querySelector('#practice')?.addEventListener('click', () => {
-            this.setState('none');
-            this.onStateChange?.('none');
-            // Launch practice mode
-            window.dispatchEvent(new CustomEvent('startPractice'));
+
+        menu.querySelector('#watch-match')?.addEventListener('click', () => {
+            this.setState('match_setup');
         });
         
+        menu.querySelector('#practice')?.addEventListener('click', () => {
+            this.setState('practice_menu');
+        });
+
+        menu.querySelector('#tutorial')?.addEventListener('click', () => {
+            this.setState('none');
+            window.dispatchEvent(new CustomEvent('startTutorial'));
+        });
+
         menu.querySelector('#settings')?.addEventListener('click', () => {
             this.setState('settings');
         });
@@ -203,6 +229,10 @@ export class MenuSystem {
     private renderMatchSetup(): void {
         const menu = document.createElement('div');
         menu.className = 'match-setup';
+        const defaultLanUrl =
+            window.location.hostname === 'localhost'
+                ? 'ws://localhost:8787/ws'
+                : `wss://${window.location.host}/ws`;
         menu.innerHTML = `
             <h1>Quick Match</h1>
             <p class="menu-subtitle">Set the vibe, then launch the point.</p>
@@ -228,23 +258,131 @@ export class MenuSystem {
                     <option value="11" selected>11 points</option>
                     <option value="15">15 points</option>
                 </select>
+
+                <label>Time of Day:</label>
+                <select id="time-of-day">
+                    <option value="morning">Morning</option>
+                    <option value="midday" selected>Midday</option>
+                    <option value="golden_hour">Golden Hour</option>
+                    <option value="sunset">Sunset</option>
+                    <option value="night">Night</option>
+                </select>
+
+                <label>Weather:</label>
+                <select id="weather">
+                    <option value="clear" selected>Clear</option>
+                    <option value="overcast">Overcast</option>
+                    <option value="rain">Rain</option>
+                    <option value="cold">Cold</option>
+                    <option value="hot">Hot</option>
+                </select>
+
+                <label>Multiplayer:</label>
+                <select id="multiplayer-mode">
+                    <option value="single" selected>Single Player</option>
+                    <option value="local_split">Local Split-Screen (2 Players)</option>
+                    <option value="lan_remote">LAN Remote Controller (Player 2)</option>
+                </select>
+
+                <div id="lan-options" style="display:none;">
+                    <label>LAN Relay WebSocket URL:</label>
+                    <input type="text" id="lan-server-url" value="${defaultLanUrl}" />
+
+                    <label>Room Code:</label>
+                    <input type="text" id="lan-room" value="fqd-room-1" />
+
+                    <label>Controller Link:</label>
+                    <input type="text" id="controller-url-preview" readonly />
+                </div>
             </div>
             <div class="menu-buttons">
                 <button class="menu-btn primary" id="start-match">Start Match</button>
+                <button class="menu-btn" id="watch-sim">Watch Sim</button>
                 <button class="menu-btn" id="back">Back</button>
             </div>
         `;
         this.container.appendChild(menu);
+
+        const multiplayerModeEl = menu.querySelector(
+            '#multiplayer-mode',
+        ) as HTMLSelectElement;
+        const lanOptionsEl = menu.querySelector('#lan-options') as HTMLDivElement;
+        const lanUrlInput = menu.querySelector('#lan-server-url') as HTMLInputElement;
+        const lanRoomInput = menu.querySelector('#lan-room') as HTMLInputElement;
+        const controllerPreviewInput = menu.querySelector(
+            '#controller-url-preview',
+        ) as HTMLInputElement;
+        const updateControllerPreview = () => {
+            const relay = encodeURIComponent(lanUrlInput.value.trim());
+            const room = encodeURIComponent(lanRoomInput.value.trim() || 'fqd-room-1');
+            controllerPreviewInput.value = `${window.location.origin}/controller.html?relay=${relay}&room=${room}`;
+        };
+        const updateMultiplayerVisibility = () => {
+            lanOptionsEl.style.display =
+                multiplayerModeEl.value === 'lan_remote' ? 'block' : 'none';
+        };
+        lanUrlInput.addEventListener('input', updateControllerPreview);
+        lanRoomInput.addEventListener('input', updateControllerPreview);
+        updateControllerPreview();
+        multiplayerModeEl.addEventListener('change', updateMultiplayerVisibility);
+        updateMultiplayerVisibility();
         
         menu.querySelector('#start-match')?.addEventListener('click', () => {
             const color = (menu.querySelector('#team-color') as HTMLSelectElement).value;
             const difficulty = (menu.querySelector('#difficulty') as HTMLSelectElement).value;
             const gameTo = parseInt((menu.querySelector('#game-to') as HTMLSelectElement).value);
-            
+            const timeOfDay = (menu.querySelector('#time-of-day') as HTMLSelectElement).value;
+            const weather = (menu.querySelector('#weather') as HTMLSelectElement).value;
+            const multiplayerMode = (menu.querySelector(
+                '#multiplayer-mode',
+            ) as HTMLSelectElement).value as MultiplayerMode;
+            const lanServerUrl = lanUrlInput.value.trim();
+            const lanRoom = lanRoomInput.value
+                .trim()
+                .slice(0, 64);
+
             this.setState('none');
-            window.dispatchEvent(new CustomEvent('startQuickMatch', { 
-                detail: { color, difficulty, gameTo } 
-            }));
+            const detail: QuickMatchConfig = {
+                color,
+                difficulty,
+                gameTo,
+                multiplayerMode,
+                timeOfDay,
+                weather,
+            };
+            if (multiplayerMode === 'lan_remote') {
+                detail.lanServerUrl = lanServerUrl;
+                detail.lanRoom = lanRoom || 'fqd-room-1';
+            }
+            window.dispatchEvent(
+                new CustomEvent('startQuickMatch', {
+                    detail,
+                }),
+            );
+        });
+
+        menu.querySelector('#watch-sim')?.addEventListener('click', () => {
+            const color = (menu.querySelector('#team-color') as HTMLSelectElement).value;
+            const difficulty = (menu.querySelector('#difficulty') as HTMLSelectElement).value;
+            const gameTo = parseInt((menu.querySelector('#game-to') as HTMLSelectElement).value);
+            const timeOfDay = (menu.querySelector('#time-of-day') as HTMLSelectElement).value;
+            const weather = (menu.querySelector('#weather') as HTMLSelectElement).value;
+
+            this.setState('none');
+            const detail: QuickMatchConfig = {
+                color,
+                difficulty,
+                gameTo,
+                multiplayerMode: 'single',
+                spectatorMode: true,
+                timeOfDay,
+                weather,
+            };
+            window.dispatchEvent(
+                new CustomEvent('startSpectatorMatch', {
+                    detail,
+                }),
+            );
         });
         
         menu.querySelector('#back')?.addEventListener('click', () => {
@@ -299,10 +437,36 @@ export class MenuSystem {
                     <input type="checkbox" id="auto-switch" ${settings.gameplay.autoSwitchOnCatch ? 'checked' : ''}>
                     Auto-switch player on catch
                 </label>
-                
+
                 <label class="checkbox">
                     <input type="checkbox" id="show-trajectory" ${settings.gameplay.showTrajectory ? 'checked' : ''}>
                     Show throw trajectory
+                </label>
+            </div>
+
+            <div class="settings-section">
+                <h2>Accessibility</h2>
+                <label>Color Blind Mode:</label>
+                <select id="color-blind-mode">
+                    <option value="none" ${settings.accessibility.colorBlindMode === 'none' ? 'selected' : ''}>None</option>
+                    <option value="protanopia" ${settings.accessibility.colorBlindMode === 'protanopia' ? 'selected' : ''}>Protanopia (Red-blind)</option>
+                    <option value="deuteranopia" ${settings.accessibility.colorBlindMode === 'deuteranopia' ? 'selected' : ''}>Deuteranopia (Green-blind)</option>
+                    <option value="tritanopia" ${settings.accessibility.colorBlindMode === 'tritanopia' ? 'selected' : ''}>Tritanopia (Blue-blind)</option>
+                </select>
+
+                <label class="checkbox">
+                    <input type="checkbox" id="high-contrast" ${settings.accessibility.highContrast ? 'checked' : ''}>
+                    High Contrast
+                </label>
+
+                <label class="checkbox">
+                    <input type="checkbox" id="large-text" ${settings.accessibility.largeText ? 'checked' : ''}>
+                    Large Text
+                </label>
+
+                <label class="checkbox">
+                    <input type="checkbox" id="reduced-motion" ${settings.accessibility.reducedMotion ? 'checked' : ''}>
+                    Reduced Motion
                 </label>
             </div>
             
@@ -350,6 +514,23 @@ export class MenuSystem {
         
         menu.querySelector('#show-trajectory')?.addEventListener('change', (e) => {
             settings.gameplay.showTrajectory = (e.target as HTMLInputElement).checked;
+        });
+
+        // Accessibility
+        menu.querySelector('#color-blind-mode')?.addEventListener('change', (e) => {
+            const value = (e.target as HTMLSelectElement).value;
+            if (['none', 'protanopia', 'deuteranopia', 'tritanopia'].includes(value)) {
+                settings.accessibility.colorBlindMode = value as 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia';
+            }
+        });
+        menu.querySelector('#high-contrast')?.addEventListener('change', (e) => {
+            settings.accessibility.highContrast = (e.target as HTMLInputElement).checked;
+        });
+        menu.querySelector('#large-text')?.addEventListener('change', (e) => {
+            settings.accessibility.largeText = (e.target as HTMLInputElement).checked;
+        });
+        menu.querySelector('#reduced-motion')?.addEventListener('change', (e) => {
+            settings.accessibility.reducedMotion = (e.target as HTMLInputElement).checked;
         });
         
         // Buttons
@@ -634,10 +815,62 @@ export class MenuSystem {
         });
     }
     
+    private renderPracticeMenu(): void {
+        const menu = document.createElement('div');
+        menu.className = 'practice-menu';
+
+        const drills = practiceManager.getAllDrillConfigs();
+
+        let drillsHtml = '';
+        drills.forEach(({ type, config }) => {
+            const bestScore = practiceManager.getBestScore(type);
+            const bestScoreText = bestScore > 0 ? `Best: ${bestScore.toFixed(1)}` : 'Not attempted';
+
+            drillsHtml += `
+                <div class="drill-card" data-drill="${type}">
+                    <h3>${config.name}</h3>
+                    <p>${config.description}</p>
+                    <div class="drill-meta">
+                        <span>${config.duration > 0 ? `${config.duration}s` : 'Untimed'}</span>
+                        <span>Target: ${config.targetScore}</span>
+                    </div>
+                    <div class="drill-best">${bestScoreText}</div>
+                    <button class="menu-btn" data-drill-start="${type}">Start Drill</button>
+                </div>
+            `;
+        });
+
+        menu.innerHTML = `
+            <h1>Practice Mode</h1>
+            <p class="menu-subtitle">Master your skills with focused drills.</p>
+            <div class="drill-grid">
+                ${drillsHtml}
+            </div>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="back">Back to Main</button>
+            </div>
+        `;
+        this.container.appendChild(menu);
+
+        // Add event listeners for drill start buttons
+        drills.forEach(({ type }) => {
+            menu.querySelector(`[data-drill-start="${type}"]`)?.addEventListener('click', () => {
+                this.setState('none');
+                window.dispatchEvent(new CustomEvent('startPracticeDrill', {
+                    detail: { drillType: type }
+                }));
+            });
+        });
+
+        menu.querySelector('#back')?.addEventListener('click', () => {
+            this.setState('main_menu');
+        });
+    }
+
     hide(): void {
         this.container.style.display = 'none';
     }
-    
+
     show(): void {
         this.container.style.display = 'flex';
     }

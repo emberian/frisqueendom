@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { InputManager } from '../InputManager';
+import type { GameplayInputSource, InputViewport } from '../InputManager';
 import { THROW_CONFIGS, calculateThrowPower, QUICK_RELEASE_WINDOW } from '../data/GameplayConstants';
 import type { ThrowParams } from '../data/Types';
 import type { Player } from '../entities/Player';
@@ -60,9 +60,10 @@ export class ThrowController {
 
     update(
         dt: number,
-        input: InputManager,
+        input: GameplayInputSource,
         player: Player,
         camera: THREE.PerspectiveCamera,
+        viewport?: InputViewport,
     ): ThrowParams | null {
         // Update fake timer
         if (this.fakeTimer > 0) {
@@ -95,7 +96,7 @@ export class ThrowController {
         this.hyzerAccum = Math.max(-0.6, Math.min(0.6, this.hyzerAccum));
 
         // Compute aim direction from mouse
-        this.updateAimDirection(input, camera, player);
+        this.updateAimDirection(input, camera, player, viewport);
 
         // Handle throw input
         if (input.mouseButtons.left) {
@@ -142,7 +143,7 @@ export class ThrowController {
         this.lastThrowTime = performance.now(); // Reset window
     }
     
-    private updateThrowType(input: InputManager): void {
+    private updateThrowType(input: GameplayInputSource): void {
         // Default based on mouse button
         if (input.mouseButtons.right) {
             this.throwType = 'forehand';
@@ -161,13 +162,22 @@ export class ThrowController {
     }
     
     private updateAimDirection(
-        input: InputManager,
+        input: GameplayInputSource,
         camera: THREE.PerspectiveCamera,
         player: Player,
+        viewport?: InputViewport,
     ): void {
+        const view = viewport ?? {
+            x: 0,
+            y: 0,
+            width: window.innerWidth,
+            height: window.innerHeight,
+        };
+        const localX = (input.mousePosition.x - view.x) / Math.max(1, view.width);
+        const localY = (input.mousePosition.y - view.y) / Math.max(1, view.height);
         const ndc = new THREE.Vector2(
-            (input.mousePosition.x / window.innerWidth) * 2 - 1,
-            -(input.mousePosition.y / window.innerHeight) * 2 + 1,
+            localX * 2 - 1,
+            -(localY * 2) + 1,
         );
         this.raycaster.setFromCamera(ndc, camera);
         
@@ -247,7 +257,7 @@ export class ThrowController {
             direction: this.aimDirection.clone(),
             speed,
             spinRate,
-            noseAngle: config.noseAngle + (this.power - 0.5) * 0.05,
+            noseAngle: config.noseAngle + (0.05 - power * 0.09),
             hyzerAngle: this.hyzerAccum + config.hyzerDefault,
             releaseHeight,
             offAxis: config.offAxis,

@@ -17,6 +17,20 @@ export class PostFX {
         this.shakeTimer = 0;
     }
 
+    triggerLayoutEffect(): void {
+        this.slowMoTimer = 0.4;
+        this.slowMoTarget = 0.25;
+        this.shakeAmplitude = 0.04;
+        this.shakeDecay = 15;
+        this.shakeTimer = 0;
+    }
+
+    triggerBlockShake(): void {
+        this.shakeAmplitude = 0.07;
+        this.shakeDecay = 10;
+        this.shakeTimer = 0;
+    }
+
     triggerSmallShake(): void {
         this.shakeAmplitude = 0.05;
         this.shakeDecay = 12;

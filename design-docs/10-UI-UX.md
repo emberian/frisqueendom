@@ -6,7 +6,8 @@
 2. **Information at a glance**: Critical info (stall count, score, wind) must be instantly readable.
 3. **Depth on demand**: Detailed stats, playbooks, and management screens accessible but not forced.
 4. **Consistent language**: Use ultimate frisbee terminology throughout (not generic sports terms).
-5. **Touch-friendly**: All UI must work with mouse, keyboard, and touch (mobile).
+5. **Mechanical parity across input devices**: Mobile touch controls expose the same mechanics as desktop controls (throw types, release shaping, fakes, catches, and defensive actions).
+6. **Touch-friendly presentation**: All UI must work with mouse, keyboard, and touch (mobile).
 
 ## In-Game HUD
 
@@ -278,14 +279,30 @@ Right thumb: throw/catch actions (contextual)
 Bottom bar: sprint toggle, player switch, context action
 ```
 
+### Mechanical Parity Mapping (Touch ↔ Desktop)
+
+Touch inputs map to the same gameplay mechanics as keyboard/mouse:
+
+| Desktop Input | Mobile Mapping |
+|---------------|----------------|
+| Left Mouse (hold/release) | Hold/release throw pad |
+| Right Mouse modifier (forehand) | Hold a second finger while charging to toggle forehand grip |
+| Shift + throw (hammer/scoober) | Tap overhead toggle, then throw (hammer/scoober selector appears) |
+| Scroll wheel (hyzer/anhyzer) | Hyzer wheel on throw pad edge (drag clockwise/counter-clockwise while charging) |
+| Ctrl (nose angle adjust) | Nose slider beside throw pad (down = nose down, up = nose up) |
+| F (pump fake) | `FAKE` button during windup |
+| Q (quick pass) | `QUICK` button (same auto-target logic) |
+| Left Mouse / Right Mouse catch types | `CATCH` modifier buttons (pancake/clap/one-hand) |
+| Space layout / layout block | `LAYOUT` button (contextual offense/defense behavior) |
+
 ### Touch Throw Aiming
 
-- Hold right thumb on screen to begin throw
-- Drag to aim (relative to player)
-- Hold duration = power (same as mouse)
-- Lift thumb = release
-- Two-finger hold = forehand grip
-- Swipe up during hold = hammer
+- Hold throw pad to begin throw (same windup/power curve as desktop)
+- Drag in field-relative direction to set aim
+- Hold duration controls power with the same overcharge penalties
+- Release to throw
+- Vertical drag component controls release height (low/high release)
+- Forehand/backhand/overhead selection uses the mapping above with no physics simplification
 
 ### Touch Gestures
 
@@ -293,10 +310,15 @@ Bottom bar: sprint toggle, player switch, context action
 - Two-finger drag: rotate camera
 - Double-tap empty field: recenter camera
 - Swipe from edge: open pause menu
+- Long-press minimap: open cut-call radial (equivalent to keyboard `1-4` teammate cut commands)
 
 ## Replay System UI
 
 After each point (and accessible from post-game):
+
+Replay implementation requirement:
+- Replays are generated from deterministic simulation state (match seed + input log), not video capture.
+- Frame stepping (`◀` / `▶`) advances exact simulation ticks for precise analysis.
 
 ```
 ┌──────────────────────────────────────────────┐

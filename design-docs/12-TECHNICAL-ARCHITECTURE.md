@@ -233,15 +233,23 @@ impl DiscSimulator {
     pub fn spin_rate(&self) -> f32;
     pub fn angle_of_attack(&self) -> f32;
 
-    // Orientation as euler angles for Three.js
-    pub fn rot_x(&self) -> f32;
-    pub fn rot_y(&self) -> f32;
-    pub fn rot_z(&self) -> f32;
+    // Orientation as quaternion for Three.js (no euler conversion artifacts)
+    pub fn quat_w(&self) -> f32;
+    pub fn quat_x(&self) -> f32;
+    pub fn quat_y(&self) -> f32;
+    pub fn quat_z(&self) -> f32;
 
     // Wind field
     pub fn set_base_wind(&mut self, speed: f32, direction: f32);
     pub fn update_wind(&mut self, dt: f32);
-    pub fn wind_at(&self, x: f32, y: f32, z: f32) -> Vec<f32>;  // [wx, wy, wz]
+    pub fn wind_x(&self, x: f32, y: f32, z: f32) -> f32;
+    pub fn wind_y(&self, x: f32, y: f32, z: f32) -> f32;
+    pub fn wind_z(&self, x: f32, y: f32, z: f32) -> f32;
+    pub fn wind_grid_ptr(&self) -> *const f32;  // contiguous xyzxyz...
+    pub fn wind_grid_len(&self) -> usize;
+    pub fn wind_grid_width(&self) -> u32;
+    pub fn wind_grid_height(&self) -> u32;
+    pub fn wind_grid_layers(&self) -> u32;
     pub fn add_gust(&mut self, origin_x: f32, origin_z: f32, dir_x: f32, dir_z: f32, speed: f32, width: f32);
 
     // Trajectory prediction (returns flat array of positions)
@@ -257,12 +265,18 @@ If WASM is unavailable, a TypeScript implementation of the same interface provid
 - Simpler wind (base + noise, no gusts/thermals)
 - Functional but not as physically nuanced
 
+Hard-deterministic modes (replay validation, ranked challenges, record verification) require the WASM path. If WASM cannot initialize, those modes are disabled rather than silently switching model fidelity.
+
 ## Game Loop
 
 ```typescript
 // main.ts
 const PHYSICS_DT = 1 / 240;  // 240Hz physics
+const AI_DT = 1 / 10;        // 10Hz AI decisions
+const MATCH_DT = 1 / 30;     // 30Hz rules/state updates
 let physicsAccumulator = 0;
+let aiAccumulator = 0;
+let matchAccumulator = 0;
 
 function gameLoop(timestamp: number) {
     const frameDt = Math.min((timestamp - lastTimestamp) / 1000, 0.05); // Cap at 50ms
@@ -291,15 +305,23 @@ function gameLoop(timestamp: number) {
 
             // Collisions
             collisionSystem.resolve(allPlayers, disc);
+
+            // Deterministic game logic schedulers (tick-based, not frame-based)
+            aiAccumulator += PHYSICS_DT;
+            matchAccumulator += PHYSICS_DT;
+
+            while (aiAccumulator >= AI_DT) {
+                aiSystem.update(AI_DT);
+                aiAccumulator -= AI_DT;
+            }
+
+            while (matchAccumulator >= MATCH_DT) {
+                match.update(MATCH_DT);
+                spiritSystem.update(MATCH_DT);
+                matchAccumulator -= MATCH_DT;
+            }
         }
         physicsAccumulator -= PHYSICS_DT;
-    }
-
-    // Game logic (every frame)
-    if (gameState === GameState.Playing) {
-        match.update(frameDt);
-        aiSystem.update(frameDt);
-        spiritSystem.update(frameDt);
     }
 
     // Animation (every frame, interpolated)
@@ -312,7 +334,7 @@ function gameLoop(timestamp: number) {
 
     // Rendering
     camera.update(frameDt);
-    grass.updateWind(discSim);  // Upload wind texture
+    grass.updateWindFromGrid(discSim);  // Bulk wind upload from WASM memory
     particles.update(frameDt);
     renderer.render(scene, camera);
 
@@ -363,6 +385,15 @@ Input → Game Logic → Physics (WASM) → Rendering (Three.js)
                   ↕
             Save/Load (localStorage)
 ```
+
+### Determinism & Replay Contract
+
+Hard determinism is required:
+- Match state includes a root `match_seed` and deterministic derived seeds per subsystem (`wind`, `ai`, `events`, `cosmetics`).
+- All gameplay-affecting randomness must come from deterministic PRNG streams (never `Math.random`).
+- Simulation advances by fixed tick index (`tick`) and fixed `dt`; frame time only affects rendering interpolation.
+- Replays are input logs (`tick`, `input`) + initial serialized state/seed, then full re-simulation.
+- Determinism validation: compute state hash every N ticks during replay and compare to recorded hash.
 
 ## Performance Targets
 
@@ -479,6 +510,7 @@ Vitest for TypeScript:
   - WASM bridge correctly transfers data
   - Game state transitions are correct
   - AI decision-making produces valid actions
+  - Deterministic replay: same seed + input log yields identical state hashes
   - Save/load roundtrip preserves data
   - Score tracking is correct
 

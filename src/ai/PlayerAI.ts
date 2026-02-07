@@ -37,7 +37,7 @@ export function decideOffenseWithDisc(
 
     for (const tm of teammates) {
         if (tm === player || tm.holdingDisc) continue;
-        const open = evaluateOpenness(player, tm, defenders);
+        const open = evaluateOpenness(player, tm, defenders, attackingEndzone);
         if (open > bestOpenness) {
             bestOpenness = open;
             bestReceiver = tm;
@@ -173,6 +173,8 @@ export function moveToward(
         return;
     }
 
+    // Don't sprint when stamina is low
+    const canSprint = sprint && player.movement.stamina > 10;
     const dir = { x: diff.x / dist, z: diff.z / dist };
-    player.movement.update(dt, dir, sprint);
+    player.movement.update(dt, dir, canSprint);
 }

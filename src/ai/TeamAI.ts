@@ -4,9 +4,11 @@ import type { Team } from '../entities/Team';
 import type { Disc } from '../entities/Disc';
 import {
     computeStackPositions,
+    computeHorizontalStackPositions,
     computeHandlerPositions,
 } from './Offense';
-import { assignMatchups } from './Defense';
+import { assignMatchups, assignZone331Positions } from './Defense';
+import type { OffenseFormation, DefenseFormation } from '../data/Types';
 import {
     decideOffenseWithDisc,
     decideOffenseWithoutDisc,
@@ -28,11 +30,14 @@ interface AIDifficultyProfile {
 
 export class TeamAI {
     private matchups = new Map<Player, Player>();
+    private zonePositions = new Map<Player, THREE.Vector3>();
     private reassignTimer = 0;
     private decisionTimer = 0;
     private activeCutterIdx = 3; // first cutter
     private cutTimers = new Map<Player, number>();
     private pendingThrow: ThrowParams | null = null;
+    private formation: OffenseFormation = 'vertical_stack';
+    private defenseType: DefenseFormation = 'man';
     private profile: AIDifficultyProfile = {
         decisionInterval: 0.1,
         activeCutDuration: 3.0,
@@ -71,6 +76,14 @@ export class TeamAI {
             throwDirectionJitter: 0.03,
             throwSpeedJitter: 0.05,
         };
+    }
+
+    setFormation(formation: OffenseFormation): void {
+        this.formation = formation;
+    }
+
+    setDefenseType(defenseType: DefenseFormation): void {
+        this.defenseType = defenseType;
     }
 
     update(
@@ -114,7 +127,9 @@ export class TeamAI {
         const defenders = opponentTeam.players;
 
         // Compute formation positions
-        const stackPos = computeStackPositions(discPos, attackingEndzone);
+        const stackPos = this.formation === 'horizontal_stack'
+            ? computeHorizontalStackPositions(discPos, attackingEndzone)
+            : computeStackPositions(discPos, attackingEndzone);
         const handlerPos = computeHandlerPositions(discPos, attackingEndzone);
 
         // Manage active cutter rotation
@@ -204,47 +219,71 @@ export class TeamAI {
         team: Team,
         opponentTeam: Team,
         disc: Disc,
-        _attackingEndzone: number,
+        attackingEndzone: number,
     ): void {
-        // Reassign matchups periodically
-        if (this.reassignTimer > this.profile.reassignInterval) {
-            this.reassignTimer = 0;
-            this.matchups = assignMatchups(
-                team.players.filter((p) => !p.isControlled),
-                opponentTeam.players,
-            );
-        }
-
+        const discPos = disc.position;
         const discHolder = opponentTeam.getHolder() || null;
 
-        for (const player of team.players) {
-            if (player.isControlled) continue;
-
-            const mark = this.matchups.get(player) || null;
-            const isMarker = discHolder !== null && mark === discHolder;
-
-            if (isMarker && discHolder) {
-                updateMarkMirror(player, discHolder, dt);
-            }
-
-            const action = decideDefense(
-                player,
-                mark,
-                discHolder,
-                disc.position,
-                isMarker,
-            );
-
-            if (action.type === 'move' && action.target) {
-                moveToward(
-                    player,
-                    action.target,
-                    dt,
-                    action.sprint ?? false,
+        if (this.defenseType === 'zone_331') {
+            // Zone defense: assign zone positions periodically
+            if (this.reassignTimer > this.profile.reassignInterval) {
+                this.reassignTimer = 0;
+                this.zonePositions = assignZone331Positions(
+                    team.players.filter((p) => !p.isControlled),
+                    discPos,
+                    attackingEndzone,
                 );
             }
 
-            player.update(dt, null);
+            for (const player of team.players) {
+                if (player.isControlled) continue;
+
+                const zoneTarget = this.zonePositions.get(player);
+                if (zoneTarget) {
+                    moveToward(player, zoneTarget, dt, false);
+                }
+
+                player.update(dt, null);
+            }
+        } else {
+            // Man-to-man defense: assign matchups periodically
+            if (this.reassignTimer > this.profile.reassignInterval) {
+                this.reassignTimer = 0;
+                this.matchups = assignMatchups(
+                    team.players.filter((p) => !p.isControlled),
+                    opponentTeam.players,
+                );
+            }
+
+            for (const player of team.players) {
+                if (player.isControlled) continue;
+
+                const mark = this.matchups.get(player) || null;
+                const isMarker = discHolder !== null && mark === discHolder;
+
+                if (isMarker && discHolder) {
+                    updateMarkMirror(player, discHolder, dt);
+                }
+
+                const action = decideDefense(
+                    player,
+                    mark,
+                    discHolder,
+                    discPos,
+                    isMarker,
+                );
+
+                if (action.type === 'move' && action.target) {
+                    moveToward(
+                        player,
+                        action.target,
+                        dt,
+                        action.sprint ?? false,
+                    );
+                }
+
+                player.update(dt, null);
+            }
         }
     }
 
@@ -267,6 +306,7 @@ export class TeamAI {
 
     resetForPoint(): void {
         this.matchups.clear();
+        this.zonePositions.clear();
         this.cutTimers.clear();
         this.reassignTimer = 0;
         this.decisionTimer = 0;

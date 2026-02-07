@@ -6,6 +6,17 @@
 //   9=L_knee, 10=L_ankle, 11=R_knee, 12=R_ankle
 
 export const JOINT_COUNT = 13;
+const FLOATS_PER_POSE = JOINT_COUNT * 3;
+
+/** Linearly interpolate between two poses. t=0 returns a, t=1 returns b. */
+export function lerpPose(a: Float32Array, b: Float32Array, t: number): Float32Array {
+    const out = new Float32Array(FLOATS_PER_POSE);
+    const s = 1 - t;
+    for (let i = 0; i < FLOATS_PER_POSE; i++) {
+        out[i] = a[i] * s + b[i] * t;
+    }
+    return out;
+}
 
 const P = {
     headY: 0.85,
@@ -406,24 +417,31 @@ export function catchPose(discDirX: number, discDirZ: number): Float32Array {
     return out;
 }
 
-export function markingPose(time: number): Float32Array {
+export function markingPose(time: number, intensity: number = 0): Float32Array {
     const out = new Float32Array(JOINT_COUNT * 3);
-    const shuffle = Math.sin(time * 4) * 0.05;
+    // intensity 0-1 scales with stall count (stallCount/10)
+    const shuffleSpeed = 4 + intensity * 6;
+    const shuffleAmp = 0.05 + intensity * 0.1;
+    const shuffle = Math.sin(time * shuffleSpeed) * shuffleAmp;
+    const crouch = intensity * 0.15;
+    const armReach = 0.1 + intensity * 0.15;
 
-    // Athletic crouch
-    setJoint(out, 0, shuffle, P.headY - 0.1, 0.1);
-    setJoint(out, 1, 0, P.neckY - 0.08, 0.08);
-    setJoint(out, 2, -P.shoulderX - 0.1, P.shoulderY - 0.05, 0.05);
-    setJoint(out, 3, -P.elbowX - 0.15, P.elbowY + 0.1, 0.15);
-    setJoint(out, 4, -P.wristX - 0.2, P.wristY + 0.2, 0.2);
-    setJoint(out, 5, P.shoulderX + 0.1, P.shoulderY - 0.05, 0.05);
-    setJoint(out, 6, P.elbowX + 0.15, P.elbowY + 0.1, 0.15);
-    setJoint(out, 7, P.wristX + 0.2, P.wristY + 0.2, 0.2);
-    setJoint(out, 8, shuffle, -0.05, 0);
-    setJoint(out, 9, -P.kneeX - 0.05 + shuffle, P.kneeY + 0.1, 0.05);
-    setJoint(out, 10, -P.ankleX - 0.05 + shuffle, P.ankleY + 0.05, 0);
-    setJoint(out, 11, P.kneeX + 0.05 + shuffle, P.kneeY + 0.1, 0.05);
-    setJoint(out, 12, P.ankleX + 0.05 + shuffle, P.ankleY + 0.05, 0);
+    // At intensity 1.0, one leg forward (lunge stance)
+    const lunge = Math.max(0, intensity - 0.8) * 5; // 0-1 over last 20%
+
+    setJoint(out, 0, shuffle, P.headY - 0.1 - crouch, 0.1 + armReach * 0.3);
+    setJoint(out, 1, 0, P.neckY - 0.08 - crouch, 0.08 + armReach * 0.2);
+    setJoint(out, 2, -P.shoulderX - 0.1, P.shoulderY - 0.05 - crouch, 0.05);
+    setJoint(out, 3, -P.elbowX - 0.15, P.elbowY + 0.1 - crouch, 0.15 + armReach);
+    setJoint(out, 4, -P.wristX - 0.2, P.wristY + 0.2 - crouch, 0.2 + armReach);
+    setJoint(out, 5, P.shoulderX + 0.1, P.shoulderY - 0.05 - crouch, 0.05);
+    setJoint(out, 6, P.elbowX + 0.15, P.elbowY + 0.1 - crouch, 0.15 + armReach);
+    setJoint(out, 7, P.wristX + 0.2, P.wristY + 0.2 - crouch, 0.2 + armReach);
+    setJoint(out, 8, shuffle, -0.05 - crouch, 0);
+    setJoint(out, 9, -P.kneeX - 0.05 + shuffle, P.kneeY + 0.1 - crouch + lunge * 0.15, 0.05 + lunge * 0.2);
+    setJoint(out, 10, -P.ankleX - 0.05 + shuffle, P.ankleY + 0.05, lunge * 0.35);
+    setJoint(out, 11, P.kneeX + 0.05 + shuffle, P.kneeY + 0.1 - crouch, 0.05 - lunge * 0.1);
+    setJoint(out, 12, P.ankleX + 0.05 + shuffle, P.ankleY + 0.05, -lunge * 0.15);
 
     return out;
 }
@@ -562,6 +580,120 @@ function hammerThrowPose(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0.05);
     setJoint(out, 12, P.ankleX, P.ankleY, 0.08);
     
+    return out;
+}
+
+/** Celebration: fist pump — one arm overhead pumping, other on hip */
+export function celebrationFistPump(time: number): Float32Array {
+    const out = new Float32Array(FLOATS_PER_POSE);
+    const pump = Math.sin(time * 5) * 0.12;
+    const jump = Math.max(0, Math.sin(time * 3.5)) * 0.06;
+
+    setJoint(out, 0, 0, P.headY + jump + 0.03, -0.05); // head tilted back slightly
+    setJoint(out, 1, 0, P.neckY + jump, 0);
+    setJoint(out, 2, -P.shoulderX, P.shoulderY + jump, 0);
+    // Left arm on hip
+    setJoint(out, 3, -P.elbowX - 0.1, P.elbowY + 0.05, -0.05);
+    setJoint(out, 4, -P.wristX + 0.1, P.wristY + 0.1, -0.08);
+    setJoint(out, 5, P.shoulderX, P.shoulderY + jump, 0);
+    // Right arm pumping overhead
+    setJoint(out, 6, P.elbowX - 0.05, P.elbowY + 0.45 + pump, 0);
+    setJoint(out, 7, P.wristX - 0.1, P.wristY + 0.7 + pump, 0);
+    setJoint(out, 8, 0, jump, 0);
+    setJoint(out, 9, -P.kneeX, P.kneeY + jump, 0);
+    setJoint(out, 10, -P.ankleX, P.ankleY, 0);
+    setJoint(out, 11, P.kneeX, P.kneeY + jump, 0);
+    setJoint(out, 12, P.ankleX, P.ankleY, 0);
+
+    return out;
+}
+
+/** Celebration: disc spike — arm slams down, jump back, both arms raised */
+export function celebrationSpike(time: number): Float32Array {
+    const out = new Float32Array(FLOATS_PER_POSE);
+
+    // Phase 1 (0-0.4s): slam arm down; Phase 2 (0.4+): both arms up, jumping
+    if (time < 0.4) {
+        const t = time / 0.4;
+        const slamY = P.wristY + 0.5 * (1 - t * 2.5); // arm goes high → low
+        setJoint(out, 0, 0, P.headY, -0.05 * t);
+        setJoint(out, 1, 0, P.neckY, -0.03 * t);
+        setJoint(out, 2, -P.shoulderX, P.shoulderY, 0);
+        setJoint(out, 3, -P.elbowX, P.elbowY, 0);
+        setJoint(out, 4, -P.wristX, P.wristY, 0);
+        setJoint(out, 5, P.shoulderX, P.shoulderY, 0);
+        setJoint(out, 6, P.elbowX, P.elbowY + 0.3 * (1 - t), 0.1 * t);
+        setJoint(out, 7, P.wristX, Math.max(P.wristY - 0.3, slamY), 0.2 * t);
+        setJoint(out, 8, 0, -0.05 * t, 0);
+        setJoint(out, 9, -P.kneeX, P.kneeY + 0.05 * t, 0);
+        setJoint(out, 10, -P.ankleX, P.ankleY, 0);
+        setJoint(out, 11, P.kneeX, P.kneeY + 0.05 * t, 0);
+        setJoint(out, 12, P.ankleX, P.ankleY, 0);
+    } else {
+        const t2 = time - 0.4;
+        const bounce = Math.max(0, Math.sin(t2 * 4)) * 0.12;
+        const armRaise = Math.min(1, t2 * 3);
+        setJoint(out, 0, 0, P.headY + bounce, -0.05);
+        setJoint(out, 1, 0, P.neckY + bounce, 0);
+        setJoint(out, 2, -P.shoulderX, P.shoulderY + bounce, 0);
+        setJoint(out, 3, -P.elbowX, P.elbowY + 0.35 * armRaise + bounce, 0);
+        setJoint(out, 4, -P.wristX + 0.1, P.wristY + 0.6 * armRaise + bounce, 0);
+        setJoint(out, 5, P.shoulderX, P.shoulderY + bounce, 0);
+        setJoint(out, 6, P.elbowX, P.elbowY + 0.35 * armRaise + bounce, 0);
+        setJoint(out, 7, P.wristX - 0.1, P.wristY + 0.6 * armRaise + bounce, 0);
+        setJoint(out, 8, 0, bounce, 0);
+        setJoint(out, 9, -P.kneeX, P.kneeY + bounce, 0);
+        setJoint(out, 10, -P.ankleX, P.ankleY, 0);
+        setJoint(out, 11, P.kneeX, P.kneeY + bounce, 0);
+        setJoint(out, 12, P.ankleX, P.ankleY, 0);
+    }
+
+    return out;
+}
+
+/** Frustration: "what?!" — both arms up in disbelief, head tilted back */
+export function frustrationArmsUp(time: number): Float32Array {
+    const out = new Float32Array(FLOATS_PER_POSE);
+    const armDrop = Math.min(1, time * 0.8) * 0.15; // arms slowly drop
+    const headShake = Math.sin(time * 8) * 0.04 * Math.exp(-time * 1.5);
+
+    setJoint(out, 0, headShake, P.headY + 0.03, -0.1); // head back
+    setJoint(out, 1, 0, P.neckY, -0.05);
+    setJoint(out, 2, -P.shoulderX, P.shoulderY, 0);
+    setJoint(out, 3, -P.elbowX - 0.15, P.elbowY + 0.35 - armDrop, 0);
+    setJoint(out, 4, -P.wristX - 0.1, P.wristY + 0.55 - armDrop, 0.05);
+    setJoint(out, 5, P.shoulderX, P.shoulderY, 0);
+    setJoint(out, 6, P.elbowX + 0.15, P.elbowY + 0.35 - armDrop, 0);
+    setJoint(out, 7, P.wristX + 0.1, P.wristY + 0.55 - armDrop, 0.05);
+    setJoint(out, 8, 0, 0, 0);
+    setJoint(out, 9, -P.kneeX, P.kneeY, 0);
+    setJoint(out, 10, -P.ankleX, P.ankleY, 0);
+    setJoint(out, 11, P.kneeX, P.kneeY, 0);
+    setJoint(out, 12, P.ankleX, P.ankleY, 0);
+
+    return out;
+}
+
+/** Frustration: head drop — shoulders slumped, head hanging, slow trudge */
+export function frustrationHeadDrop(time: number): Float32Array {
+    const out = new Float32Array(FLOATS_PER_POSE);
+    const slump = 0.2;
+    const walkPhase = Math.sin(time * 1.5) * 0.03; // very slow shuffle
+
+    setJoint(out, 0, 0, P.headY - slump - 0.05, 0.15); // head way down
+    setJoint(out, 1, 0, P.neckY - slump, 0.1);
+    setJoint(out, 2, -P.shoulderX, P.shoulderY - slump * 0.6, 0);
+    setJoint(out, 3, -P.elbowX, P.elbowY - 0.05, 0.05); // arms dangling
+    setJoint(out, 4, -P.wristX, P.wristY - 0.1, 0.08);
+    setJoint(out, 5, P.shoulderX, P.shoulderY - slump * 0.6, 0);
+    setJoint(out, 6, P.elbowX, P.elbowY - 0.05, 0.05);
+    setJoint(out, 7, P.wristX, P.wristY - 0.1, 0.08);
+    setJoint(out, 8, 0, -slump * 0.3, 0);
+    setJoint(out, 9, -P.kneeX, P.kneeY + walkPhase, walkPhase * 2);
+    setJoint(out, 10, -P.ankleX, P.ankleY, walkPhase * 3);
+    setJoint(out, 11, P.kneeX, P.kneeY - walkPhase, -walkPhase * 2);
+    setJoint(out, 12, P.ankleX, P.ankleY, -walkPhase * 3);
+
     return out;
 }
 

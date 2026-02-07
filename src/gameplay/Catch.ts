@@ -11,6 +11,8 @@ export interface CatchResult {
     isInterception: boolean;
     isLayout: boolean;
     catchQuality: 'perfect' | 'clean' | 'contested' | 'difficult';
+    isContestedCatch?: boolean;
+    isContestedDrop?: boolean;
 }
 
 export interface CatchOptions {
@@ -31,15 +33,32 @@ export function checkCatch(
     return null;
 }
 
+// Deterministic hash for contest resolution
+function deterministicHash(x: number, y: number, z: number, frame: number): number {
+    // Simple hash function for deterministic outcomes
+    const a = Math.floor(x * 1000);
+    const b = Math.floor(y * 1000);
+    const c = Math.floor(z * 1000);
+    const d = Math.floor(frame);
+    const hash = ((a * 73856093) ^ (b * 19349663) ^ (c * 83492791) ^ (d * 50331653));
+    return Math.abs(hash % 1000) / 1000;
+}
+
+interface CatchCandidate {
+    player: Player;
+    distance: number;
+    isLayout: boolean;
+    catchQuality: CatchResult['catchQuality'];
+    speed: number;
+}
+
 function checkFlightCatch(
     disc: Disc,
     allPlayers: Player[],
 ): CatchResult | null {
-    let nearest: Player | null = null;
-    let nearestDist = Infinity;
-    let isLayout = false;
-    let catchQuality: CatchResult['catchQuality'] = 'clean';
-    
+    const candidates: CatchCandidate[] = [];
+    const frameNumber = Math.floor(performance.now() / 16.67); // ~60fps frame count
+
     for (const player of allPlayers) {
         if (player.holdingDisc) continue;
 
@@ -48,7 +67,7 @@ function checkFlightCatch(
         const handDist = _handPos.distanceTo(disc.position);
         const catchRadius = player.getCatchRadius();
 
-        if (handDist < catchRadius && handDist < nearestDist) {
+        if (handDist < catchRadius) {
             // Check if facing roughly toward disc
             const toDisc = disc.position
                 .clone()
@@ -63,47 +82,54 @@ function checkFlightCatch(
 
             // Minimum facing requirement (forward 180° cone)
             if (dot > 0.0) {
-                nearest = player;
-                nearestDist = handDist;
-                isLayout = false;
-                
-                // Determine catch quality
+                let quality: CatchResult['catchQuality'] = 'clean';
                 if (handDist < catchRadius * 0.3) {
-                    catchQuality = 'perfect';
+                    quality = 'perfect';
                 } else if (handDist < catchRadius * 0.7) {
-                    catchQuality = 'clean';
+                    quality = 'clean';
                 } else {
-                    catchQuality = 'difficult';
+                    quality = 'difficult';
                 }
+
+                candidates.push({
+                    player,
+                    distance: handDist,
+                    isLayout: false,
+                    catchQuality: quality,
+                    speed: player.movement.velocity.length(),
+                });
             }
         }
-        
+
         // Layout catch check - predict where disc will be
         const layoutRadius = player.getLayoutRadius();
-        if (!nearest && player.stats) {
+        if (player.stats) {
             // Predict disc position at layout completion time
             const layoutTime = 0.3; // Time to complete layout
             const predictedDiscPos = disc.position.clone().add(
                 disc.velocity.clone().multiplyScalar(layoutTime)
             );
-            
+
             // Check if player can reach with layout
             const distToPrediction = player.movement.position.distanceTo(predictedDiscPos);
-            
-            if (distToPrediction < layoutRadius && distToPrediction < nearestDist + 1) {
+
+            if (distToPrediction < layoutRadius) {
                 // Check if layout is possible (disc is in front and catchable height)
                 const toPredicted = predictedDiscPos.clone().sub(player.movement.position);
                 const heightOk = predictedDiscPos.y < 2.5 && predictedDiscPos.y > 0.5;
-                
+
                 if (heightOk && toPredicted.z > 0) { // Disc is in front
                     // Try to trigger layout
                     const canLayout = player.startLayout(predictedDiscPos);
                     if (canLayout) {
-                        nearest = player;
-                        nearestDist = distToPrediction;
-                        isLayout = true;
-                        catchQuality = 'difficult';
-                        
+                        candidates.push({
+                            player,
+                            distance: distToPrediction,
+                            isLayout: true,
+                            catchQuality: 'difficult',
+                            speed: player.movement.velocity.length(),
+                        });
+
                         // Update stats
                         if (player.stats) {
                             player.stats.career.blocks++; // Track layouts as defensive plays
@@ -114,28 +140,105 @@ function checkFlightCatch(
         }
     }
 
-    if (nearest) {
-        const isInterception =
-            disc.thrownByTeam !== null && disc.thrownByTeam !== nearest.team;
-        
-        // Trigger catch animation
-        if (isLayout) {
-            // Layout animation already triggered
-        } else {
-            // Normal catch - could add catch animation here
-        }
-        
-        // Update stats based on catch quality
-        if (nearest.stats) {
-            nearest.stats.career.completions++;
-            if (isInterception) {
-                nearest.stats.career.blocks++;
+    if (candidates.length === 0) return null;
+
+    // Check for contested catch situation
+    if (candidates.length > 1) {
+        // Find if there are opposing team players contesting
+        const teams = new Set(candidates.map(c => c.player.team));
+        if (teams.size > 1) {
+            // Contested catch scenario
+            candidates.sort((a, b) => a.distance - b.distance);
+            const closest = candidates[0];
+            const defender = candidates.find(c => c.player.team !== closest.player.team);
+
+            if (defender) {
+                const defenderDist = defender.distance;
+                let blockChance = 0;
+
+                // Calculate block chance based on defender distance
+                if (defenderDist < 0.5) {
+                    blockChance = 0.40;
+                } else if (defenderDist < 1.0) {
+                    blockChance = 0.20;
+                } else if (defenderDist < 1.5) {
+                    blockChance = 0.05;
+                }
+
+                // Factor in speed advantage (approaching vs stationary)
+                const speedDiff = defender.speed - closest.speed;
+                if (speedDiff > 2.0) {
+                    blockChance += 0.1; // Defender closing fast
+                } else if (speedDiff < -2.0) {
+                    blockChance -= 0.1; // Attacker has momentum
+                }
+
+                // Clamp block chance
+                blockChance = Math.max(0, Math.min(0.5, blockChance));
+
+                // Deterministic roll
+                const roll = deterministicHash(
+                    disc.position.x,
+                    disc.position.y,
+                    disc.position.z,
+                    frameNumber
+                );
+
+                if (roll < blockChance) {
+                    // Contested drop - turnover
+                    return {
+                        catcher: closest.player,
+                        isInterception: false,
+                        isLayout: closest.isLayout,
+                        catchQuality: 'contested',
+                        isContestedDrop: true,
+                    };
+                } else {
+                    // Contested catch success
+                    const isInterception =
+                        disc.thrownByTeam !== null && disc.thrownByTeam !== closest.player.team;
+
+                    if (closest.player.stats) {
+                        closest.player.stats.career.completions++;
+                        if (isInterception) {
+                            closest.player.stats.career.blocks++;
+                        }
+                    }
+
+                    return {
+                        catcher: closest.player,
+                        isInterception,
+                        isLayout: closest.isLayout,
+                        catchQuality: 'contested',
+                        isContestedCatch: true,
+                    };
+                }
             }
         }
-        
-        return { catcher: nearest, isInterception, isLayout, catchQuality };
     }
-    return null;
+
+    // No contest - simple nearest player catch
+    const nearest = candidates.reduce((prev, curr) =>
+        curr.distance < prev.distance ? curr : prev
+    );
+
+    const isInterception =
+        disc.thrownByTeam !== null && disc.thrownByTeam !== nearest.player.team;
+
+    // Update stats based on catch quality
+    if (nearest.player.stats) {
+        nearest.player.stats.career.completions++;
+        if (isInterception) {
+            nearest.player.stats.career.blocks++;
+        }
+    }
+
+    return {
+        catcher: nearest.player,
+        isInterception,
+        isLayout: nearest.isLayout,
+        catchQuality: nearest.catchQuality
+    };
 }
 
 function checkPickup(
