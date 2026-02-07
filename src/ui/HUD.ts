@@ -1,12 +1,26 @@
-import type { TeamSide } from '../data/Types';
-
 export class HUD {
     private scoreEl: HTMLDivElement;
     private stallBar: HTMLDivElement;
     private stallFill: HTMLDivElement;
+    private stallLabelEl: HTMLDivElement;
     private stateTextEl: HTMLDivElement;
     private windEl: HTMLDivElement;
     private phaseEl: HTMLDivElement;
+    private controlsEl: HTMLDivElement;
+    private helpHintEl: HTMLDivElement;
+    private helpOverlayEl: HTMLDivElement;
+    private helpVisible = false;
+    private contextSignature = '';
+    private homeTeamName = 'Home';
+    private awayTeamName = 'Away';
+    private homeTeamColor = '#8fdcff';
+    private awayTeamColor = '#ffd7a0';
+    private readonly onKeyDown = (e: KeyboardEvent) => {
+        if (e.code === 'KeyH' || e.key === '?') {
+            this.setHelpVisible(!this.helpVisible);
+            e.preventDefault();
+        }
+    };
 
     constructor() {
         const ui = document.getElementById('ui')!;
@@ -14,64 +28,123 @@ export class HUD {
         // Score display
         this.scoreEl = document.createElement('div');
         this.scoreEl.style.cssText =
-            'position:absolute;top:16px;left:50%;transform:translateX(-50%);' +
-            'font-family:monospace;font-size:24px;font-weight:bold;color:white;' +
-            'text-shadow:2px 2px 4px rgba(0,0,0,0.8);letter-spacing:2px;';
+            'position:absolute;top:14px;left:50%;transform:translateX(-50%);' +
+            'padding:8px 16px;border-radius:999px;background:rgba(7,16,30,0.86);' +
+            'border:1px solid rgba(255,255,255,0.24);backdrop-filter:blur(6px);' +
+            'font-family:monospace;font-size:17px;font-weight:bold;color:white;' +
+            'text-shadow:0 2px 8px rgba(0,0,0,0.65);letter-spacing:1px;';
         ui.appendChild(this.scoreEl);
 
         // Stall bar
         const stallContainer = document.createElement('div');
         stallContainer.style.cssText =
-            'position:absolute;top:50px;left:50%;transform:translateX(-50%);' +
-            'width:160px;height:8px;background:rgba(0,0,0,0.3);border-radius:4px;overflow:hidden;';
+            'position:absolute;top:56px;left:50%;transform:translateX(-50%);' +
+            'width:220px;height:10px;background:rgba(0,0,0,0.45);border-radius:999px;overflow:hidden;' +
+            'border:1px solid rgba(255,255,255,0.18);';
         this.stallFill = document.createElement('div');
         this.stallFill.style.cssText =
-            'height:100%;width:0%;border-radius:4px;transition:background 0.15s;';
+            'height:100%;width:0%;border-radius:999px;transition:background 0.15s;';
         stallContainer.appendChild(this.stallFill);
         this.stallBar = stallContainer;
         ui.appendChild(this.stallBar);
+
+        this.stallLabelEl = document.createElement('div');
+        this.stallLabelEl.style.cssText =
+            'position:absolute;top:74px;left:50%;transform:translateX(-50%);' +
+            'padding:2px 8px;border-radius:999px;background:rgba(0,0,0,0.45);' +
+            'border:1px solid rgba(255,255,255,0.18);font-family:monospace;font-size:11px;' +
+            'letter-spacing:0.09em;color:rgba(255,255,255,0.94);text-transform:uppercase;';
+        ui.appendChild(this.stallLabelEl);
 
         // State text (TURNOVER, SCORE, etc.)
         this.stateTextEl = document.createElement('div');
         this.stateTextEl.style.cssText =
             'position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);' +
-            'font-family:monospace;font-size:48px;font-weight:bold;color:white;' +
-            'text-shadow:3px 3px 6px rgba(0,0,0,0.9);opacity:0;transition:opacity 0.3s;';
+            'font-family:monospace;font-size:56px;font-weight:bold;color:white;' +
+            'text-shadow:0 8px 24px rgba(0,0,0,0.8),0 0 18px rgba(255,122,34,0.4);' +
+            'letter-spacing:0.08em;opacity:0;transition:opacity 0.3s;';
         ui.appendChild(this.stateTextEl);
 
         // Wind indicator
         this.windEl = document.createElement('div');
         this.windEl.style.cssText =
-            'position:absolute;top:16px;left:16px;font-family:monospace;font-size:14px;' +
-            'color:white;text-shadow:1px 1px 2px black;';
+            'position:absolute;top:14px;left:14px;padding:7px 10px;border-radius:10px;' +
+            'background:rgba(5,16,30,0.82);border:1px solid rgba(255,255,255,0.22);' +
+            'font-family:monospace;font-size:12px;color:white;text-shadow:0 2px 6px rgba(0,0,0,0.65);';
         ui.appendChild(this.windEl);
 
         // Phase display
         this.phaseEl = document.createElement('div');
         this.phaseEl.style.cssText =
-            'position:absolute;top:16px;right:16px;font-family:monospace;font-size:12px;' +
-            'color:rgba(255,255,255,0.6);text-shadow:1px 1px 2px black;';
+            'position:absolute;top:14px;right:14px;padding:7px 10px;border-radius:10px;' +
+            'background:rgba(5,16,30,0.82);border:1px solid rgba(255,255,255,0.22);' +
+            'font-family:monospace;font-size:11px;letter-spacing:0.07em;text-transform:uppercase;' +
+            'color:rgba(255,255,255,0.9);text-shadow:0 2px 6px rgba(0,0,0,0.65);';
         ui.appendChild(this.phaseEl);
+
+        // Dynamic controls bar
+        this.controlsEl = document.createElement('div');
+        this.controlsEl.style.cssText =
+            'position:absolute;left:50%;bottom:14px;transform:translateX(-50%);' +
+            'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:min(96vw, 900px);' +
+            'font-family:monospace;font-size:12px;line-height:1.2;pointer-events:none;filter:drop-shadow(0 6px 18px rgba(0,0,0,0.4));';
+        ui.appendChild(this.controlsEl);
+
+        // Always-visible hint for full controls
+        this.helpHintEl = document.createElement('div');
+        this.helpHintEl.style.cssText =
+            'position:absolute;right:16px;bottom:16px;padding:6px 10px;border-radius:8px;' +
+            'background:rgba(0,0,0,0.45);color:rgba(255,255,255,0.9);font-family:monospace;' +
+            'font-size:12px;text-shadow:1px 1px 2px black;';
+        this.helpHintEl.innerHTML = `${renderKey('H')} Controls`;
+        ui.appendChild(this.helpHintEl);
+
+        // Full controls overlay
+        this.helpOverlayEl = document.createElement('div');
+        this.helpOverlayEl.style.cssText =
+            'position:absolute;inset:0;display:none;align-items:center;justify-content:center;' +
+            'background:rgba(6,10,18,0.8);pointer-events:none;';
+        this.helpOverlayEl.innerHTML = buildHelpOverlayHtml();
+        ui.appendChild(this.helpOverlayEl);
+
+        window.addEventListener('keydown', this.onKeyDown);
     }
 
     updateScore(home: number, away: number): void {
+        const homeInitials = getInitials(this.homeTeamName);
+        const awayInitials = getInitials(this.awayTeamName);
         this.scoreEl.innerHTML =
-            `<span style="color:#5599ff">${home}</span>` +
-            ` - ` +
-            `<span style="color:#ff5555">${away}</span>`;
+            `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${this.homeTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${homeInitials}</span><span style="color:${this.homeTeamColor};">${escapeHtml(this.homeTeamName.toUpperCase())}</span> <span style="color:white;">${home}</span></span>` +
+            `<span style="padding:0 9px;color:rgba(255,255,255,0.45);">|</span>` +
+            `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${this.awayTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${awayInitials}</span><span style="color:${this.awayTeamColor};">${escapeHtml(this.awayTeamName.toUpperCase())}</span> <span style="color:white;">${away}</span></span>`;
+    }
+
+    setTeams(
+        homeName: string,
+        awayName: string,
+        homeColorHex: string,
+        awayColorHex: string,
+    ): void {
+        this.homeTeamName = homeName;
+        this.awayTeamName = awayName;
+        this.homeTeamColor = homeColorHex;
+        this.awayTeamColor = awayColorHex;
     }
 
     updateStall(stallCount: number, maxStall: number, visible: boolean): void {
         this.stallBar.style.display = visible ? 'block' : 'none';
+        this.stallLabelEl.style.display = visible ? 'block' : 'none';
         const pct = Math.min(100, (stallCount / maxStall) * 100);
         this.stallFill.style.width = pct + '%';
 
         let color: string;
-        if (pct < 50) color = '#44cc44';
-        else if (pct < 70) color = '#cccc44';
-        else if (pct < 90) color = '#cc8844';
-        else color = '#cc4444';
+        if (pct < 50) color = '#38d67a';
+        else if (pct < 70) color = '#ffc646';
+        else if (pct < 90) color = '#ff8a2a';
+        else color = '#ff4f5e';
         this.stallFill.style.background = color;
+        const stallShown = Math.min(maxStall, Math.ceil(stallCount));
+        this.stallLabelEl.textContent = `Stall ${stallShown}`;
     }
 
     showStateText(text: string, show: boolean): void {
@@ -80,13 +153,49 @@ export class HUD {
     }
 
     updateWind(speed: number, directionRad: number): void {
-        const dirDeg = Math.round((directionRad * 180) / Math.PI);
         const arrow = getWindArrow(directionRad);
-        this.windEl.textContent = `Wind: ${speed.toFixed(1)} m/s ${arrow}`;
+        this.windEl.textContent = `Wind ${arrow} ${speed.toFixed(1)} m/s`;
     }
 
     updatePhase(phase: string): void {
         this.phaseEl.textContent = phase.replace(/_/g, ' ').toUpperCase();
+    }
+
+    updateContext(context: HUDContext): void {
+        const signature = `${context.phase}|${context.hasDisc}|${context.isPlayerOnOffense}|${context.isPlayerPulling}|${context.quickReleaseAvailable}`;
+        if (signature === this.contextSignature) {
+            return;
+        }
+        this.contextSignature = signature;
+
+        const actions = getContextActions(context);
+        this.controlsEl.innerHTML = actions
+            .map((action) =>
+                renderActionChip(action.keys, action.label, action.priority === 'high'))
+            .join('');
+    }
+    
+    updateSpirit(spiritScore: number): void {
+        // Could add a spirit display element
+    }
+
+    setHelpVisible(visible: boolean): void {
+        this.helpVisible = visible;
+        this.helpOverlayEl.style.display = visible ? 'flex' : 'none';
+        this.helpHintEl.style.opacity = visible ? '0.35' : '1';
+    }
+    
+    destroy(): void {
+        window.removeEventListener('keydown', this.onKeyDown);
+        this.scoreEl.remove();
+        this.stallBar.remove();
+        this.stallLabelEl.remove();
+        this.stateTextEl.remove();
+        this.windEl.remove();
+        this.phaseEl.remove();
+        this.controlsEl.remove();
+        this.helpHintEl.remove();
+        this.helpOverlayEl.remove();
     }
 }
 
@@ -95,4 +204,181 @@ function getWindArrow(rad: number): string {
     const arrows = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
     const idx = Math.round(deg / 45) % 8;
     return arrows[idx];
+}
+
+interface HUDContext {
+    phase: string;
+    hasDisc: boolean;
+    isPlayerOnOffense: boolean;
+    isPlayerPulling: boolean;
+    quickReleaseAvailable: boolean;
+}
+
+interface ContextAction {
+    keys: string;
+    label: string;
+    priority?: 'high' | 'normal';
+}
+
+function renderKey(key: string): string {
+    return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.12);font-weight:bold;">${escapeHtml(key)}</span>`;
+}
+
+function renderActionChip(
+    keys: string,
+    label: string,
+    highlight: boolean,
+): string {
+    const bg = highlight ? 'linear-gradient(140deg, rgba(255, 209, 102, 0.23), rgba(255, 122, 34, 0.25))' : 'rgba(4, 14, 28, 0.72)';
+    const border = highlight ? 'rgba(255, 209, 102, 0.74)' : 'rgba(255,255,255,0.22)';
+    return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:9px;background:${bg};border:1px solid ${border};color:white;">${renderKey(keys)}<span>${escapeHtml(label)}</span></span>`;
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getInitials(name: string): string {
+    const parts = name
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+    if (parts.length === 0) return 'TM';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function getContextActions(context: HUDContext): ContextAction[] {
+    if (context.phase === 'pre_pull') {
+        return context.isPlayerPulling
+            ? [
+                  { keys: 'LMB / Space', label: 'Pull', priority: 'high' },
+                  { keys: 'E', label: 'Switch Player' },
+                  { keys: 'H', label: 'Controls' },
+                  { keys: 'Esc', label: 'Pause' },
+              ]
+            : [
+                  { keys: 'WASD', label: 'Move and Get Open' },
+                  { keys: 'Shift', label: 'Sprint' },
+                  { keys: 'E', label: 'Switch Player' },
+                  { keys: 'H', label: 'Controls' },
+              ];
+    }
+
+    if (context.phase === 'live_play' && context.hasDisc) {
+        const actions: ContextAction[] = [
+            { keys: 'LMB Hold', label: 'Charge Throw', priority: 'high' },
+            { keys: 'LMB Tap', label: 'Pump Fake' },
+            { keys: 'RMB Hold', label: 'Forehand Modifier' },
+            { keys: 'Q / B / T', label: 'Special Throws' },
+            { keys: 'R / F', label: 'High / Low Release' },
+            { keys: 'Wheel', label: 'Hyzer / Anhyzer' },
+            { keys: 'A / D', label: 'Pivot' },
+            { keys: 'H', label: 'Controls' },
+        ];
+        if (context.quickReleaseAvailable) {
+            actions.unshift({
+                keys: 'Space',
+                label: 'Quick Release',
+                priority: 'high',
+            });
+        }
+        return actions;
+    }
+
+    if (context.phase === 'live_play' && context.isPlayerOnOffense) {
+        return [
+            { keys: 'WASD', label: 'Move (Camera Relative)', priority: 'high' },
+            { keys: 'Shift', label: 'Sprint' },
+            { keys: 'Space', label: 'Jump / Layout' },
+            { keys: 'E', label: 'Switch Player' },
+            { keys: 'C / V', label: 'Timeout / Foul Call' },
+            { keys: 'H', label: 'Controls' },
+        ];
+    }
+
+    if (context.phase === 'live_play') {
+        return [
+            { keys: 'WASD', label: 'Defend (Camera Relative)', priority: 'high' },
+            { keys: 'Shift', label: 'Sprint' },
+            { keys: 'Space', label: 'Jump / Layout D' },
+            { keys: 'E', label: 'Switch Defender' },
+            { keys: 'C / V', label: 'Timeout / Foul Call' },
+            { keys: 'H', label: 'Controls' },
+        ];
+    }
+
+    if (context.phase === 'score') {
+        return [
+            { keys: 'WASD', label: 'Move During Celebration' },
+            { keys: 'H', label: 'Controls' },
+            { keys: 'Esc', label: 'Pause' },
+        ];
+    }
+
+    return [
+        { keys: 'WASD', label: 'Move' },
+        { keys: 'E', label: 'Switch Player' },
+        { keys: 'H', label: 'Controls' },
+        { keys: 'Esc', label: 'Pause' },
+    ];
+}
+
+function buildHelpOverlayHtml(): string {
+    return `
+<div style="width:min(920px, 95vw);max-height:90vh;overflow:auto;background:rgba(10,15,26,0.93);border:1px solid rgba(255,255,255,0.2);border-radius:14px;padding:20px 22px;color:white;font-family:monospace;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h2 style="margin:0;font-size:24px;letter-spacing:1px;">Controls</h2>
+    <div>${renderKey('H')} Close</div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 16px;">
+    ${renderHelpSection('Movement', [
+        ['WASD', 'Move (camera-relative)'],
+        ['Shift', 'Sprint (without disc)'],
+        ['Space', 'Jump / layout attempt'],
+        ['E', 'Switch controlled player'],
+    ])}
+    ${renderHelpSection('Throwing (Holding Disc)', [
+        ['LMB Hold', 'Charge and release throw'],
+        ['LMB Tap', 'Pump fake'],
+        ['Mouse', 'Aim throw direction'],
+        ['RMB Hold', 'Forehand modifier'],
+        ['Wheel', 'Hyzer / anhyzer angle'],
+        ['Q', 'Hammer (or scoober with RMB)'],
+        ['B', 'Blade throw'],
+        ['T', 'Thumber throw'],
+        ['R / F', 'High / low release height'],
+        ['Space', 'Quick release after catch'],
+        ['A / D', 'Pivot while holding disc'],
+    ])}
+    ${renderHelpSection('Match Controls', [
+        ['Esc', 'Pause'],
+        ['C', 'Call timeout'],
+        ['V', 'Call foul (spirit system)'],
+        ['H', 'Toggle this controls panel'],
+    ])}
+  </div>
+</div>`;
+}
+
+function renderHelpSection(
+    title: string,
+    rows: [string, string][],
+): string {
+    const content = rows
+        .map(
+            ([keys, desc]) =>
+                `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.08);"><span>${renderKey(keys)}</span><span style="text-align:right;color:rgba(255,255,255,0.9);">${escapeHtml(desc)}</span></div>`,
+        )
+        .join('');
+    return `
+<section style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px 12px;">
+  <h3 style="margin:0 0 8px 0;font-size:15px;color:#f0dc8c;">${escapeHtml(title)}</h3>
+  ${content}
+</section>`;
 }

@@ -17,9 +17,15 @@ export class Match {
     phaseTimer = 0;
     pullReady = false;
     playerTeam: TeamSide = 'home';
+    private gameTo = 11;
 
     private stateText = '';
     private stateTextTimer = 0;
+    private lastScorerInfo: {
+        team: TeamSide;
+        playerId: string;
+        playerName: string;
+    } | null = null;
 
     get statusText(): string {
         return this.stateText;
@@ -27,6 +33,23 @@ export class Match {
 
     get statusTextActive(): boolean {
         return this.stateTextTimer > 0;
+    }
+
+    get lastScorer(): {
+        team: TeamSide;
+        playerId: string;
+        playerName: string;
+    } | null {
+        return this.lastScorerInfo;
+    }
+
+    setGameTo(points: number): void {
+        if (!Number.isFinite(points)) return;
+        this.gameTo = Math.max(1, Math.floor(points));
+    }
+
+    getGameTo(): number {
+        return this.gameTo;
     }
 
     getAttackingEndzone(): number {
@@ -152,9 +175,25 @@ export class Match {
         if (this.point.scored) {
             this.phase = 'score';
             this.phaseTimer = 0;
+            const scorer = disc.holder;
+            if (scorer) {
+                this.lastScorerInfo = {
+                    team: this.offenseTeam,
+                    playerId: scorer.id,
+                    playerName:
+                        scorer.stats?.fullName ??
+                        `${scorer.role} #${scorer.index + 1}`,
+                };
+            } else {
+                this.lastScorerInfo = null;
+            }
             const idx = this.offenseTeam === 'home' ? 0 : 1;
             this.score[idx]++;
-            this.showText('SCORE!');
+            if (this.score[idx] >= this.gameTo) {
+                this.showText(this.offenseTeam === 'home' ? 'HOME WINS!' : 'AWAY WINS!');
+            } else {
+                this.showText('SCORE!');
+            }
         }
     }
 
@@ -168,6 +207,9 @@ export class Match {
     }
 
     private handleScore(dt: number): void {
+        if (this.score[0] >= this.gameTo || this.score[1] >= this.gameTo) {
+            return;
+        }
         this.phaseTimer += dt;
         if (this.phaseTimer > 2.0) {
             this.phase = 'point_reset';
@@ -184,6 +226,7 @@ export class Match {
         this.pullingTeam = this.offenseTeam;
         this.offenseTeam =
             this.offenseTeam === 'home' ? 'away' : 'home';
+        this.lastScorerInfo = null;
 
         // Reset all players
         for (const p of [...homeTeam.players, ...awayTeam.players]) {

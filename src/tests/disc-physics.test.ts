@@ -399,7 +399,7 @@ export async function runAll(): Promise<{
 
     // Init WASM if not already loaded
     try {
-        await init(wasmUrl);
+        await init({ module_or_path: wasmUrl });
     } catch {
         // Already initialized, that's fine
     }

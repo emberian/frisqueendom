@@ -24,19 +24,28 @@ export class PointFlow {
         offenseTeam: Team,
         attackingEndzone: number,
     ): void {
+        const holder = disc.holder;
+        const offenseHasDisc = holder ? offenseTeam.players.includes(holder) : false;
+
         // Stall count
-        if (disc.state === 'held') {
+        if (disc.state === 'held' && offenseHasDisc) {
             this.stallActive = true;
             this.stallCount += dt;
             if (this.stallCount >= STALL_DURATION) {
                 this.triggerTurnover('stall');
                 return;
             }
+        } else {
+            this.stallActive = false;
         }
 
         // Reset stall on new catch
         if (disc.justCaught) {
             this.stallCount = 0;
+            if (holder && !offenseHasDisc) {
+                this.triggerTurnover('interception');
+                return;
+            }
         }
 
         // Turnover: disc hits ground from flight

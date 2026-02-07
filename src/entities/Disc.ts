@@ -9,6 +9,7 @@ export class Disc {
     state: DiscLifecycle = 'on_ground';
     previousState: DiscLifecycle = 'on_ground';
     position = new THREE.Vector3(0, 0, 50);
+    velocity = new THREE.Vector3();
     holder: Player | null = null;
     bridge: DiscBridge;
     mesh: THREE.Group;
@@ -56,6 +57,7 @@ export class Disc {
         if (!this.holder) return;
         const hand = this.holder.getHandPosition();
         this.position.copy(hand);
+        this.velocity.set(0, 0, 0);
         this.mesh.position.copy(this.position);
         // Orient disc flat relative to holder's facing
         this.mesh.quaternion.setFromAxisAngle(
@@ -66,6 +68,7 @@ export class Disc {
 
     private updateFlight(_dt: number): void {
         this.bridge.getPosition(this.position);
+        this.bridge.getVelocity(this.velocity);
         this.bridge.getQuaternion(this.mesh.quaternion);
         this.mesh.position.copy(this.position);
 
@@ -79,6 +82,7 @@ export class Disc {
         this.state = 'on_ground';
         this.previousState = 'on_ground';
         this.position.copy(pos);
+        this.velocity.set(0, 0, 0);
         this.mesh.position.copy(pos);
         this.holder = null;
         this.justCaught = false;

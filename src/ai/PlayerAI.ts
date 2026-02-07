@@ -46,7 +46,7 @@ export function decideOffenseWithDisc(
 
     if (bestReceiver && bestOpenness > threshold) {
         const speed = 15 + bestOpenness * 5;
-        const leadTarget = computeLeadPass(bestReceiver, speed);
+        const leadTarget = computeLeadPass(player, bestReceiver, speed);
         const direction = leadTarget
             .clone()
             .sub(player.movement.position)

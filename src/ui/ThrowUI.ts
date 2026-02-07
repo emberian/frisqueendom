@@ -9,16 +9,19 @@ export class ThrowUI {
 
         this.container = document.createElement('div');
         this.container.style.cssText =
-            'position:absolute;bottom:60px;left:50%;transform:translateX(-50%);display:none;text-align:center;';
+            'position:absolute;bottom:64px;left:50%;transform:translateX(-50%);display:none;text-align:center;' +
+            'padding:8px 10px;border-radius:12px;background:rgba(6,16,30,0.72);' +
+            'border:1px solid rgba(255,255,255,0.2);backdrop-filter:blur(5px);';
         ui.appendChild(this.container);
 
         // Power bar
         const barContainer = document.createElement('div');
         barContainer.style.cssText =
-            'width:200px;height:12px;background:rgba(0,0,0,0.4);border-radius:6px;overflow:hidden;margin:0 auto;';
+            'width:220px;height:14px;background:rgba(0,0,0,0.48);border-radius:999px;overflow:hidden;margin:0 auto;' +
+            'border:1px solid rgba(255,255,255,0.2);';
         this.powerFill = document.createElement('div');
         this.powerFill.style.cssText =
-            'height:100%;width:0%;border-radius:6px;transition:background 0.1s;';
+            'height:100%;width:0%;border-radius:999px;transition:background 0.1s;';
         barContainer.appendChild(this.powerFill);
         this.container.appendChild(barContainer);
 
@@ -27,7 +30,7 @@ export class ThrowUI {
         // Hyzer indicator
         this.hyzerIndicator = document.createElement('div');
         this.hyzerIndicator.style.cssText =
-            'color:white;font-family:monospace;font-size:12px;margin-top:4px;text-shadow:1px 1px 2px black;';
+            'color:white;font-family:monospace;font-size:12px;letter-spacing:0.04em;margin-top:6px;text-shadow:0 2px 6px rgba(0,0,0,0.7);';
         this.container.appendChild(this.hyzerIndicator);
     }
 
@@ -38,10 +41,10 @@ export class ThrowUI {
         this.powerFill.style.width = pct + '%';
 
         let color: string;
-        if (power < 0.3) color = '#44cc44';
-        else if (power < 0.6) color = '#cccc44';
-        else if (power < 0.9) color = '#cc8844';
-        else color = '#cc4444';
+        if (power < 0.3) color = '#38d67a';
+        else if (power < 0.6) color = '#ffd166';
+        else if (power < 0.9) color = '#ff8a2a';
+        else color = '#ff4d6d';
         this.powerFill.style.background = color;
 
         const grip = isForehand ? 'FH' : 'BH';
@@ -57,5 +60,9 @@ export class ThrowUI {
 
     hide(): void {
         this.container.style.display = 'none';
+    }
+    
+    destroy(): void {
+        this.container.remove();
     }
 }

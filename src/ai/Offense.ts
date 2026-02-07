@@ -104,10 +104,11 @@ export function computeCutTarget(
 }
 
 export function computeLeadPass(
+    thrower: Player,
     receiver: Player,
     throwSpeed: number,
 ): THREE.Vector3 {
-    const dist = receiver.movement.position.length(); // approximate
+    const dist = thrower.movement.position.distanceTo(receiver.movement.position);
     const travelTime = dist / Math.max(throwSpeed, 5);
     const leadTime = Math.min(travelTime, 0.5);
     return receiver.movement.position

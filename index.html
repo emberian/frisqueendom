@@ -5,21 +5,523 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <title>FrisQueendom</title>
     <style>
+        :root {
+            --font-title: "Bebas Neue", "Impact", "Haettenschweiler", sans-serif;
+            --font-body: "Rajdhani", "Avenir Next Condensed", "Trebuchet MS", sans-serif;
+            --bg-night: #051120;
+            --bg-panel: rgba(6, 18, 34, 0.9);
+            --bg-panel-soft: rgba(9, 30, 56, 0.7);
+            --line-soft: rgba(255, 255, 255, 0.14);
+            --text-main: #f4f8ff;
+            --text-dim: #93a6bf;
+            --accent-gold: #ffd166;
+            --accent-cyan: #33d6ff;
+            --accent-orange: #ff7a22;
+            --accent-red: #ff4d6d;
+            --shadow-strong: 0 20px 70px rgba(0, 0, 0, 0.45);
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { width: 100%; height: 100%; overflow: hidden; }
-        canvas { display: block; }
-        #ui {
-            position: absolute;
-            top: 0;
-            left: 0;
+
+        html, body {
             width: 100%;
             height: 100%;
+            overflow: hidden;
+            font-family: var(--font-body);
+            background: radial-gradient(1200px 800px at 50% 20%, #14436e 0%, #081a30 45%, #040b15 100%);
+            color: var(--text-main);
+            letter-spacing: 0.02em;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
             pointer-events: none;
+            background:
+                radial-gradient(600px 300px at 15% -10%, rgba(51, 214, 255, 0.24), transparent 70%),
+                radial-gradient(700px 420px at 85% -15%, rgba(255, 122, 34, 0.24), transparent 70%),
+                repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.025) 0 2px, transparent 2px 26px);
+            mix-blend-mode: screen;
+            z-index: 0;
+        }
+
+        canvas {
+            display: block;
+            position: relative;
+            z-index: 1;
+        }
+        
+        #ui {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        #ui > * {
+            pointer-events: auto;
+        }
+
+        #menu-container {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+        }
+        
+        .menu-container {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 22px;
+            background:
+                linear-gradient(165deg, rgba(8, 22, 43, 0.92) 0%, rgba(6, 16, 31, 0.96) 100%);
+            overflow: hidden;
+        }
+
+        .menu-container::before {
+            content: "";
+            position: absolute;
+            inset: -15%;
+            background:
+                radial-gradient(ellipse at 20% 10%, rgba(51, 214, 255, 0.25), transparent 55%),
+                radial-gradient(ellipse at 80% 15%, rgba(255, 122, 34, 0.25), transparent 55%),
+                radial-gradient(ellipse at 50% 115%, rgba(84, 206, 90, 0.18), transparent 60%);
+            pointer-events: none;
+            animation: drift 18s ease-in-out infinite alternate;
+        }
+
+        .title-screen,
+        .main-menu,
+        .career-menu,
+        .match-setup,
+        .settings-menu,
+        .credits {
+            position: relative;
+            z-index: 2;
+            animation: panelIn 420ms cubic-bezier(.2, .9, .2, 1);
+        }
+        
+        .title-screen {
+            width: min(980px, 94vw);
+            border-radius: 24px;
+            border: 1px solid var(--line-soft);
+            background:
+                linear-gradient(140deg, rgba(8, 27, 48, 0.86) 0%, rgba(7, 20, 34, 0.9) 100%);
+            box-shadow: var(--shadow-strong);
+            padding: clamp(28px, 5vw, 54px);
+            text-align: center;
+        }
+
+        .title-eyebrow {
+            display: inline-block;
+            border: 1px solid rgba(255, 209, 102, 0.6);
+            border-radius: 999px;
+            padding: 6px 14px;
+            color: var(--accent-gold);
+            font-size: 0.82rem;
+            letter-spacing: 0.2em;
+            margin-bottom: 14px;
+            text-transform: uppercase;
+        }
+        
+        .game-title {
+            font-family: var(--font-title);
+            font-size: clamp(3.2rem, 13vw, 7.6rem);
+            line-height: 0.9;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 0.45rem;
+            background: linear-gradient(20deg, #fff6de 8%, #ffd166 38%, #ff7a22 72%, #ff4d6d 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 45px rgba(255, 122, 34, 0.32);
+        }
+        
+        .game-subtitle {
+            font-size: clamp(1rem, 2vw, 1.4rem);
+            color: var(--text-dim);
+            letter-spacing: 0.1em;
+            margin-bottom: 1.1rem;
+            text-transform: uppercase;
+        }
+
+        .title-features {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: clamp(24px, 4vw, 34px);
+        }
+
+        .title-features span {
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.08);
+            color: #d9e8ff;
+            font-size: 0.88rem;
+            letter-spacing: 0.08em;
+        }
+        
+        .version {
+            margin-top: 14px;
+            color: rgba(167, 188, 216, 0.72);
+            font-size: 0.78rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+        
+        .main-menu, .career-menu, .match-setup, .settings-menu, .credits {
+            width: min(880px, 94vw);
+            max-height: 90vh;
+            overflow-y: auto;
+            border-radius: 22px;
+            border: 1px solid var(--line-soft);
+            background:
+                linear-gradient(155deg, var(--bg-panel) 0%, var(--bg-panel-soft) 100%);
+            box-shadow: var(--shadow-strong);
+            padding: clamp(22px, 4vw, 40px);
+            color: var(--text-main);
+        }
+        
+        .main-menu h1, .career-menu h1, .match-setup h1, .settings-menu h1, .credits h1 {
+            text-align: center;
+            font-family: var(--font-title);
+            letter-spacing: 0.08em;
+            font-size: clamp(2rem, 4vw, 3rem);
+            color: #ffe2a8;
+            text-transform: uppercase;
+            margin-bottom: 0.25rem;
+        }
+
+        .menu-subtitle {
+            text-align: center;
+            color: var(--text-dim);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            margin-bottom: 1.2rem;
+        }
+        
+        .menu-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .menu-btn {
+            position: relative;
+            overflow: hidden;
+            padding: 0.9rem 1.15rem;
+            font-size: 1rem;
+            font-family: var(--font-body);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 12px;
+            color: var(--text-main);
+            cursor: pointer;
+            transition: transform .2s ease, border-color .2s ease, background .2s ease, box-shadow .2s ease;
+            font-weight: 700;
+        }
+
+        .menu-btn::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-120%);
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent);
+            transition: transform .45s ease;
+        }
+        
+        .menu-btn:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255, 209, 102, 0.65);
+            background: rgba(255, 209, 102, 0.16);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
+        }
+
+        .menu-btn:hover::before {
+            transform: translateX(120%);
+        }
+        
+        .menu-btn.primary {
+            border-color: rgba(255, 122, 34, 0.8);
+            background: linear-gradient(150deg, rgba(255, 122, 34, 0.92), rgba(255, 77, 109, 0.9));
+            color: #fff9ee;
+        }
+        
+        .menu-btn.primary:hover {
+            border-color: rgba(255, 209, 102, 0.95);
+            background: linear-gradient(150deg, rgba(255, 149, 46, 0.96), rgba(255, 93, 121, 0.95));
+        }
+        
+        .menu-btn.danger {
+            border-color: rgba(255, 77, 109, 0.72);
+            background: rgba(255, 77, 109, 0.18);
+        }
+        
+        .menu-btn.danger:hover {
+            border-color: rgba(255, 120, 148, 0.95);
+            background: rgba(255, 77, 109, 0.34);
+        }
+        
+        .career-stats {
+            background: rgba(0, 0, 0, 0.22);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            padding: 1rem 1rem 0.8rem;
+            margin-bottom: 1.1rem;
+        }
+        
+        .career-stats p {
+            margin: 0.45rem 0;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            color: #e5f0ff;
+        }
+        
+        .settings-section {
+            margin-bottom: 1.25rem;
+            padding: 0.95rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.11);
+            background: rgba(0, 0, 0, 0.19);
+        }
+        
+        .settings-section h2 {
+            font-family: var(--font-title);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 1.25rem;
+            margin-bottom: 0.55rem;
+            color: var(--accent-cyan);
+        }
+        
+        .settings-section label {
+            display: block;
+            margin: 0.7rem 0;
+            color: #dce7f8;
+        }
+        
+        .settings-section input[type="range"] {
+            width: 100%;
+            margin-top: 0.45rem;
+            accent-color: var(--accent-orange);
+        }
+        
+        .settings-section select,
+        .setup-options select,
+        .dialog input {
+            width: 100%;
+            padding: 0.62rem 0.7rem;
+            border-radius: 9px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            color: var(--text-main);
+            background: rgba(2, 8, 20, 0.68);
+            font-family: var(--font-body);
+            font-size: 0.98rem;
+        }
+
+        .settings-section select:focus,
+        .setup-options select:focus,
+        .dialog input:focus {
+            outline: none;
+            border-color: rgba(51, 214, 255, 0.85);
+            box-shadow: 0 0 0 2px rgba(51, 214, 255, 0.22);
+        }
+        
+        .settings-section .checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        
+        .settings-section .checkbox input {
+            width: auto;
+            accent-color: var(--accent-orange);
+        }
+        
+        .setup-options {
+            margin-bottom: 1.1rem;
+            padding: 0.95rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.11);
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        .setup-options label {
+            display: block;
+            margin: 0.8rem 0 0.45rem;
+            text-transform: uppercase;
+            font-size: 0.86rem;
+            letter-spacing: 0.08em;
+            color: #d8e2f0;
+        }
+        
+        .dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 8, 16, 0.82);
+            backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
+            padding: 18px;
+        }
+        
+        .dialog {
+            width: min(520px, 95vw);
+            border-radius: 16px;
+            padding: 1.4rem;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: linear-gradient(145deg, rgba(6, 18, 33, 0.95), rgba(10, 32, 55, 0.9));
+            color: var(--text-main);
+            box-shadow: var(--shadow-strong);
+        }
+        
+        .dialog.wide {
+            width: min(760px, 95vw);
+        }
+        
+        .dialog h2 {
+            font-family: var(--font-title);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.8rem;
+            color: #ffe2a8;
+        }
+        
+        .dialog label {
+            display: block;
+            margin: 0.65rem 0 0.35rem;
+            color: #dce8fb;
+        }
+        
+        .dialog-buttons {
+            display: flex;
+            gap: 0.7rem;
+            margin-top: 1.05rem;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+        
+        .training-options {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+            margin: 0.8rem 0;
+        }
+        
+        .pause-menu {
+            position: fixed;
+            inset: 0;
+            background: rgba(3, 8, 16, 0.72);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+            padding: 20px;
+        }
+        
+        .pause-content {
+            width: min(440px, 92vw);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: linear-gradient(145deg, rgba(7, 20, 34, 0.95), rgba(10, 31, 54, 0.88));
+            box-shadow: var(--shadow-strong);
+        }
+        
+        .pause-content h2 {
+            font-family: var(--font-title);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #ffe2a8;
+            margin-bottom: 1rem;
+        }
+        
+        .credits-content {
+            text-align: center;
+            line-height: 1.6;
+            color: #d6e4f8;
+        }
+        
+        .credits-content h2 {
+            color: #ffe4b3;
+            margin: 1.2rem 0 0.4rem;
+            font-family: var(--font-title);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        
+        .credits-content h3 {
+            color: #88ddff;
+            margin: 0.9rem 0 0.3rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.95rem;
+        }
+        
+        .credits-content .copyright {
+            margin-top: 1.2rem;
+            color: rgba(154, 180, 212, 0.68);
+            font-size: 0.82rem;
+        }
+        
+        @keyframes panelIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.985);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes drift {
+            from { transform: translate3d(-1.5%, 0, 0) scale(1); }
+            to { transform: translate3d(1.5%, -1%, 0) scale(1.05); }
+        }
+        
+        @media (max-width: 720px) {
+            .menu-container { padding: 12px; }
+
+            .title-screen,
+            .main-menu,
+            .career-menu,
+            .match-setup,
+            .settings-menu,
+            .credits {
+                width: 96vw;
+                padding: 1.15rem;
+                border-radius: 16px;
+            }
+
+            .menu-buttons {
+                grid-template-columns: 1fr;
+            }
+
+            .menu-btn {
+                font-size: 0.92rem;
+                letter-spacing: 0.08em;
+            }
         }
     </style>
 </head>
 <body>
     <div id="ui"></div>
+    <div id="menu-container"></div>
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

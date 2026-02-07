@@ -449,3 +449,159 @@ export function celebrationPose(time: number): Float32Array {
 
     return out;
 }
+
+// Throw pose selector based on throw type and timing
+export function throwingPose(
+    time: number,
+    throwType: 'backhand' | 'forehand' | 'hammer' | 'scoober',
+): Float32Array {
+    switch (throwType) {
+        case 'forehand':
+            return forehandThrowPose(time, 0.5);
+        case 'hammer':
+            return hammerThrowPose(time);
+        case 'scoober':
+            return scooberThrowPose(time);
+        case 'backhand':
+        default:
+            return backhandThrowPose(time, 0.5);
+    }
+}
+
+// Layout/diving pose - progress from 0 (start) to 1 (landed)
+export function layoutPose(progress: number): Float32Array {
+    const out = new Float32Array(JOINT_COUNT * 3);
+    
+    // Layout arc: dive forward then land
+    const diveHeight = Math.sin(progress * Math.PI) * 0.5;
+    const forwardLean = progress * 1.2; // Radians, leaning forward
+    
+    // Arms reaching forward
+    const armReach = 0.3 + progress * 0.2;
+    
+    setJoint(out, 0, 0, P.headY + diveHeight, -forwardLean * 0.5);
+    setJoint(out, 1, 0, P.neckY + diveHeight, -forwardLean * 0.7);
+    setJoint(out, 2, -P.shoulderX, P.shoulderY + diveHeight, -forwardLean + armReach);
+    setJoint(out, 3, -P.elbowX, P.elbowY + diveHeight + 0.1, -forwardLean + armReach * 1.2);
+    setJoint(out, 4, -P.wristX, P.wristY + diveHeight + 0.15, -forwardLean + armReach * 1.5);
+    setJoint(out, 5, P.shoulderX, P.shoulderY + diveHeight, -forwardLean + armReach);
+    setJoint(out, 6, P.elbowX, P.elbowY + diveHeight + 0.1, -forwardLean + armReach * 1.2);
+    setJoint(out, 7, P.wristX, P.wristY + diveHeight + 0.15, -forwardLean + armReach * 1.5);
+    setJoint(out, 8, 0, diveHeight, -forwardLean * 0.9);
+    
+    // Legs trailing behind
+    const legTrail = progress * 0.3;
+    setJoint(out, 9, -P.kneeX, P.kneeY + diveHeight * 0.5, -legTrail);
+    setJoint(out, 10, -P.ankleX, P.ankleY + diveHeight * 0.3, -legTrail * 1.5);
+    setJoint(out, 11, P.kneeX, P.kneeY + diveHeight * 0.5, -legTrail);
+    setJoint(out, 12, P.ankleX, P.ankleY + diveHeight * 0.3, -legTrail * 1.5);
+    
+    return out;
+}
+
+// Frustration/drop pose
+export function frustrationPose(time: number): Float32Array {
+    const out = new Float32Array(JOINT_COUNT * 3);
+    
+    // Shoulders slump, head down, hands on hips or gesturing
+    const slump = 0.15;
+    const headShake = Math.sin(time * 10) * 0.05 * Math.exp(-time * 2);
+    
+    setJoint(out, 0, headShake, P.headY - slump, 0.2);
+    setJoint(out, 1, 0, P.neckY - slump * 0.8, 0.15);
+    setJoint(out, 2, -P.shoulderX, P.shoulderY - slump * 0.5, 0);
+    setJoint(out, 3, -P.elbowX, P.elbowY + 0.1, 0.1);
+    setJoint(out, 4, -P.wristX, P.wristY + 0.15, 0.05); // Hand on hip
+    setJoint(out, 5, P.shoulderX, P.shoulderY - slump * 0.5, 0);
+    setJoint(out, 6, P.elbowX, P.elbowY + 0.1, 0.1);
+    setJoint(out, 7, P.wristX, P.wristY + 0.15, 0.05);
+    setJoint(out, 8, 0, -slump * 0.3, 0);
+    setJoint(out, 9, -P.kneeX, P.kneeY, 0);
+    setJoint(out, 10, -P.ankleX, P.ankleY, 0);
+    setJoint(out, 11, P.kneeX, P.kneeY, 0);
+    setJoint(out, 12, P.ankleX, P.ankleY, 0);
+    
+    return out;
+}
+
+// Hammer throw (overhead backhand)
+function hammerThrowPose(time: number): Float32Array {
+    const out = new Float32Array(JOINT_COUNT * 3);
+    
+    let armHeight: number;
+    let armExtend: number;
+    
+    if (time < 0.3) {
+        // Wind-up - arm back and up
+        const t = time / 0.3;
+        armHeight = t * 0.8;
+        armExtend = -t * 0.4;
+    } else if (time < 0.45) {
+        // Release - snap forward
+        const t = (time - 0.3) / 0.15;
+        armHeight = 0.8 - t * 0.3;
+        armExtend = -0.4 + t * 0.9;
+    } else {
+        // Follow-through
+        const t = Math.min(1, (time - 0.45) / 0.55);
+        armHeight = 0.5 * (1 - t);
+        armExtend = 0.5 * (1 - t * 0.5);
+    }
+    
+    setJoint(out, 0, 0, P.headY, 0);
+    setJoint(out, 1, 0, P.neckY, 0);
+    setJoint(out, 2, -P.shoulderX, P.shoulderY + 0.2, 0);
+    setJoint(out, 3, -P.elbowX, P.elbowY + armHeight * 0.5, armExtend * 0.5);
+    setJoint(out, 4, -P.wristX, P.wristY + armHeight, armExtend);
+    setJoint(out, 5, P.shoulderX, P.shoulderY, 0);
+    setJoint(out, 6, P.elbowX, P.elbowY, 0);
+    setJoint(out, 7, P.wristX, P.wristY, 0);
+    setJoint(out, 8, 0, 0, 0);
+    setJoint(out, 9, -P.kneeX, P.kneeY, -0.05);
+    setJoint(out, 10, -P.ankleX, P.ankleY, -0.08);
+    setJoint(out, 11, P.kneeX, P.kneeY, 0.05);
+    setJoint(out, 12, P.ankleX, P.ankleY, 0.08);
+    
+    return out;
+}
+
+// Scoober throw (overhead forehand)
+function scooberThrowPose(time: number): Float32Array {
+    const out = new Float32Array(JOINT_COUNT * 3);
+    
+    let armHeight: number;
+    let armSide: number;
+    
+    if (time < 0.25) {
+        // Wind-up
+        const t = time / 0.25;
+        armHeight = t * 0.6;
+        armSide = t * 0.3;
+    } else if (time < 0.4) {
+        // Release
+        const t = (time - 0.25) / 0.15;
+        armHeight = 0.6 + t * 0.2;
+        armSide = 0.3 + t * 0.3;
+    } else {
+        // Follow-through
+        const t = Math.min(1, (time - 0.4) / 0.6);
+        armHeight = 0.8 * (1 - t * 0.6);
+        armSide = 0.6 * (1 - t * 0.4);
+    }
+    
+    setJoint(out, 0, 0, P.headY, 0);
+    setJoint(out, 1, 0, P.neckY, 0);
+    setJoint(out, 2, -P.shoulderX, P.shoulderY, 0);
+    setJoint(out, 3, -P.elbowX, P.elbowY, 0);
+    setJoint(out, 4, -P.wristX, P.wristY, 0);
+    setJoint(out, 5, P.shoulderX + armSide * 0.2, P.shoulderY + armHeight * 0.3, 0);
+    setJoint(out, 6, P.elbowX + armSide * 0.4, P.elbowY + armHeight * 0.6, armSide * 0.3);
+    setJoint(out, 7, P.wristX + armSide * 0.5, P.wristY + armHeight, armSide * 0.5);
+    setJoint(out, 8, 0, 0, 0);
+    setJoint(out, 9, -P.kneeX, P.kneeY, 0);
+    setJoint(out, 10, -P.ankleX, P.ankleY, 0);
+    setJoint(out, 11, P.kneeX, P.kneeY, 0);
+    setJoint(out, 12, P.ankleX, P.ankleY, 0);
+    
+    return out;
+}

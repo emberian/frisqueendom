@@ -22,6 +22,10 @@ export class MovementController {
     velocity = new THREE.Vector3();
     facing = 0;
     stamina = STAMINA_MAX;
+    maxSpeed = PLAYER_JOG_SPEED;
+    sprintSpeed = PLAYER_SPRINT_SPEED;
+    acceleration = PLAYER_ACCELERATION;
+    deceleration = PLAYER_DECELERATION;
     private _isSprinting = false;
 
     get isSprinting(): boolean {
@@ -36,8 +40,8 @@ export class MovementController {
         this._isSprinting = sprint && this.stamina > 0;
 
         const maxSpeed = this._isSprinting
-            ? PLAYER_SPRINT_SPEED
-            : PLAYER_JOG_SPEED;
+            ? this.sprintSpeed
+            : this.maxSpeed;
         const inputMag = Math.sqrt(
             inputDir.x * inputDir.x + inputDir.z * inputDir.z,
         );
@@ -47,7 +51,7 @@ export class MovementController {
             const nz = inputDir.z / inputMag;
             const targetVelX = nx * maxSpeed;
             const targetVelZ = nz * maxSpeed;
-            const accel = PLAYER_ACCELERATION * dt;
+            const accel = this.acceleration * dt;
 
             const dx = targetVelX - this.velocity.x;
             this.velocity.x += Math.sign(dx) * Math.min(accel, Math.abs(dx));
@@ -63,7 +67,7 @@ export class MovementController {
         } else {
             const speed = this.velocity.length();
             if (speed > 0.01) {
-                const decel = PLAYER_DECELERATION * dt;
+                const decel = this.deceleration * dt;
                 const newSpeed = Math.max(0, speed - decel);
                 if (newSpeed > 0) {
                     this.velocity.normalize().multiplyScalar(newSpeed);

@@ -14,7 +14,17 @@ import {
     moveToward,
 } from './PlayerAI';
 import { updateMarkMirror } from './Marking';
-import type { ThrowParams, TeamSide } from '../data/Types';
+import type { ThrowParams } from '../data/Types';
+
+export type AIDifficulty = 'easy' | 'normal' | 'hard';
+
+interface AIDifficultyProfile {
+    decisionInterval: number;
+    activeCutDuration: number;
+    reassignInterval: number;
+    throwDirectionJitter: number;
+    throwSpeedJitter: number;
+}
 
 export class TeamAI {
     private matchups = new Map<Player, Player>();
@@ -23,6 +33,45 @@ export class TeamAI {
     private activeCutterIdx = 3; // first cutter
     private cutTimers = new Map<Player, number>();
     private pendingThrow: ThrowParams | null = null;
+    private profile: AIDifficultyProfile = {
+        decisionInterval: 0.1,
+        activeCutDuration: 3.0,
+        reassignInterval: 2.0,
+        throwDirectionJitter: 0.03,
+        throwSpeedJitter: 0.05,
+    };
+
+    setDifficulty(level: AIDifficulty): void {
+        if (level === 'easy') {
+            this.profile = {
+                decisionInterval: 0.18,
+                activeCutDuration: 3.4,
+                reassignInterval: 2.5,
+                throwDirectionJitter: 0.09,
+                throwSpeedJitter: 0.15,
+            };
+            return;
+        }
+
+        if (level === 'hard') {
+            this.profile = {
+                decisionInterval: 0.07,
+                activeCutDuration: 2.5,
+                reassignInterval: 1.4,
+                throwDirectionJitter: 0.015,
+                throwSpeedJitter: 0.03,
+            };
+            return;
+        }
+
+        this.profile = {
+            decisionInterval: 0.1,
+            activeCutDuration: 3.0,
+            reassignInterval: 2.0,
+            throwDirectionJitter: 0.03,
+            throwSpeedJitter: 0.05,
+        };
+    }
 
     update(
         dt: number,
@@ -77,7 +126,7 @@ export class TeamAI {
             const timer = this.cutTimers.get(c) || 0;
             if (c.index === this.activeCutterIdx) {
                 this.cutTimers.set(c, timer + dt);
-                if (timer > 3) {
+                if (timer > this.profile.activeCutDuration) {
                     // Rotate active cutter
                     this.cutTimers.set(c, 0);
                     const cutterIndices = cutters.map((cc) => cc.index);
@@ -97,7 +146,7 @@ export class TeamAI {
 
             if (player.holdingDisc) {
                 // AI with disc: decide to throw
-                if (this.decisionTimer > 0.1) {
+                if (this.decisionTimer > this.profile.decisionInterval) {
                     this.decisionTimer = 0;
                     const action = decideOffenseWithDisc(
                         player,
@@ -107,7 +156,7 @@ export class TeamAI {
                         attackingEndzone,
                     );
                     if (action.type === 'throw' && action.throwParams) {
-                        this.pendingThrow = action.throwParams;
+                        this.pendingThrow = this.applyThrowVariance(action.throwParams);
                     }
                 }
             } else if (player.role === 'handler') {
@@ -158,7 +207,7 @@ export class TeamAI {
         _attackingEndzone: number,
     ): void {
         // Reassign matchups periodically
-        if (this.reassignTimer > 2) {
+        if (this.reassignTimer > this.profile.reassignInterval) {
             this.reassignTimer = 0;
             this.matchups = assignMatchups(
                 team.players.filter((p) => !p.isControlled),
@@ -197,6 +246,23 @@ export class TeamAI {
 
             player.update(dt, null);
         }
+    }
+
+    private applyThrowVariance(throwParams: ThrowParams): ThrowParams {
+        const direction = throwParams.direction.clone();
+        direction.x += (Math.random() - 0.5) * this.profile.throwDirectionJitter;
+        direction.y += (Math.random() - 0.5) * this.profile.throwDirectionJitter;
+        direction.z += (Math.random() - 0.5) * this.profile.throwDirectionJitter;
+        direction.normalize();
+
+        const speedJitter =
+            1 + (Math.random() - 0.5) * this.profile.throwSpeedJitter;
+
+        return {
+            ...throwParams,
+            direction,
+            speed: Math.max(5, throwParams.speed * speedJitter),
+        };
     }
 
     resetForPoint(): void {
