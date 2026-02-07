@@ -110,6 +110,9 @@ async function main() {
     // Start by giving player control of first home player
     switching.switchTo(homeTeam.players[0]);
 
+    // Debug: expose game objects for console testing
+    (window as any).__game = { match, disc, homeTeam, awayTeam, input, discSim };
+
     // Follow target for camera
     const followTarget = new THREE.Vector3(0, 0, 50);
     let physicsAccumulator = 0;

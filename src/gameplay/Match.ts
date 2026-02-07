@@ -110,7 +110,7 @@ export class Match {
             this.pullingTeam === 'home' ? homeTeam : awayTeam;
         const puller = pullingT.players[0];
 
-        const targetEndzone = this.attackingEndzone[this.offenseTeam];
+        const targetEndzone = this.attackingEndzone[this.pullingTeam];
         const params = createAIPullParams(puller, targetEndzone);
         disc.throwDisc(params, this.pullingTeam);
 
