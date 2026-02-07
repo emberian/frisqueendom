@@ -94,7 +94,7 @@ export class ThrowController {
     private computeThrowParams(player: Player, power: number): ThrowParams {
         const speed = power * (this.isForehand ? 28 : 25);
         const spinRate = (this.isForehand ? 100 : 80) * power * 1.1;
-        const noseAngle = 0.05 - power * 0.02;
+        const noseAngle = 0.05 - power * 0.09;
 
         return {
             position: player.movement.position

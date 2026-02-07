@@ -8,7 +8,9 @@
         "build": "npm run build:wasm && vite build",
         "build:wasm": "cd frisque-physics && wasm-pack build --target web --release",
         "build:wasm:dev": "cd frisque-physics && wasm-pack build --target web --dev",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "test:rust": "cd frisque-physics && cargo test",
+        "test:rust:verbose": "cd frisque-physics && cargo test -- --nocapture"
     },
     "dependencies": {
         "three": "^0.170.0"

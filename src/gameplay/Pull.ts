@@ -43,11 +43,11 @@ export function createAIPullParams(
 
     return {
         position: puller.movement.position.clone().setY(1.5),
-        direction: new THREE.Vector3(0.02, 0.06, dir * 0.99).normalize(),
+        direction: new THREE.Vector3(0.02, 0.10, dir * 0.99).normalize(),
         speed: 30,
-        spinRate: 80,
-        noseAngle: 0.0,
-        hyzerAngle: 0.1,
+        spinRate: 100,
+        noseAngle: -0.04,
+        hyzerAngle: 0.15,
         releaseHeight: 1.8,
         offAxis: 0,
         isForehand: false,

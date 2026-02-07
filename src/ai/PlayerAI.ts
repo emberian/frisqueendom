@@ -68,7 +68,7 @@ export function decideOffenseWithDisc(
             direction,
             speed,
             spinRate: (isForehand ? 90 : 70) * 0.8,
-            noseAngle: 0.03,
+            noseAngle: 0.05 - speed * 0.003,
             hyzerAngle: 0.05,
             releaseHeight: 1.5,
             offAxis: 0,

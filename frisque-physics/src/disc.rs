@@ -37,11 +37,11 @@ pub fn default_ultimate_disc() -> DiscProfile {
         cl_alpha: 1.4,
         cl_max: 1.1,
         alpha_stall: 0.785,
-        cd_0: 0.025,
-        cd_alpha: 1.2,
+        cd_0: 0.08,
+        cd_alpha: 2.2,
         cm_0: -0.005,
         cm_alpha: 0.003,
-        spin_decay: 0.0002,
+        spin_decay: 0.00002,
     }
 }
 

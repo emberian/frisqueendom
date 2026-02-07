@@ -113,6 +113,11 @@ async function main() {
     // Debug: expose game objects for console testing
     (window as any).__game = { match, disc, homeTeam, awayTeam, input, discSim };
 
+    // Register test suite (lazy import, only loaded when called)
+    (window as any).__tests = {
+        discPhysics: () => import('./tests/disc-physics.test').then(m => m.runAll()),
+    };
+
     // Follow target for camera
     const followTarget = new THREE.Vector3(0, 0, 50);
     let physicsAccumulator = 0;
