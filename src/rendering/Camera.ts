@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type CameraMode = 'follow_player' | 'follow_disc' | 'broadcast';
+export type CameraMode = 'follow_player' | 'follow_disc' | 'broadcast' | 'overview';
 
 const _tempCenter = new THREE.Vector3();
 const _finalOffset = new THREE.Vector3();
@@ -41,6 +41,9 @@ export class GameCamera {
             case 'broadcast':
                 this.targetOffset.set(-40, 25, 0);
                 break;
+            case 'overview':
+                this.targetOffset.set(-55, 45, 0);
+                break;
         }
     }
 
@@ -79,6 +82,33 @@ export class GameCamera {
 
         _finalOffset.copy(this.currentOffset).multiplyScalar(zoomMod);
         this.camera.position.copy(this.target).add(_finalOffset);
+        this.camera.lookAt(this.target);
+    }
+
+    /** Instantly snap to a mode + target with no transition or lerp. */
+    snapTo(mode: CameraMode, target: THREE.Vector3): void {
+        this.mode = mode;
+        this.target.copy(target);
+        this.transitionProgress = 1;
+
+        switch (mode) {
+            case 'follow_player':
+                this.targetOffset.set(0, 12, -18);
+                break;
+            case 'follow_disc':
+                this.targetOffset.set(0, 18, -25);
+                break;
+            case 'broadcast':
+                this.targetOffset.set(-40, 25, 0);
+                break;
+            case 'overview':
+                this.targetOffset.set(-55, 45, 0);
+                break;
+        }
+        this.currentOffset.copy(this.targetOffset);
+        this.prevOffset.copy(this.targetOffset);
+
+        this.camera.position.copy(this.target).add(this.currentOffset);
         this.camera.lookAt(this.target);
     }
 

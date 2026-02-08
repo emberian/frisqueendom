@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Player } from '../entities/Player';
-import { FIELD_WIDTH } from '../data/Constants';
+import { FIELD_WIDTH, FIELD_LENGTH } from '../data/Constants';
 
 const _diff = new THREE.Vector3();
 const _ray = new THREE.Vector3();
@@ -22,7 +22,8 @@ export function computeStackPositions(
     const stackX = Math.max(-halfW * 0.4, Math.min(halfW * 0.4, discPos.x * 0.5));
     
     for (let i = 0; i < 4; i++) {
-        STACK_POSITIONS[i].set(stackX, 0, baseZ + i * spacing);
+        const z = Math.max(2, Math.min(FIELD_LENGTH - 2, baseZ + i * spacing));
+        STACK_POSITIONS[i].set(stackX, 0, z);
     }
     return STACK_POSITIONS;
 }
@@ -36,9 +37,10 @@ export function computeHorizontalStackPositions(
     const halfW = FIELD_WIDTH / 2;
     
     // 4 cutters spread across the field width
+    const clampedLineZ = Math.max(2, Math.min(FIELD_LENGTH - 2, lineZ));
     for (let i = 0; i < 4; i++) {
         const x = -halfW * 0.6 + (i / 3) * halfW * 1.2;
-        STACK_POSITIONS[i].set(x, 0, lineZ);
+        STACK_POSITIONS[i].set(x, 0, clampedLineZ);
     }
     return STACK_POSITIONS;
 }
@@ -54,9 +56,11 @@ export function computeHandlerPositions(
     // Offset handler triangle relative to disc x, clamped to stay in bounds
     const cx = Math.max(-halfW * 0.3, Math.min(halfW * 0.3, discPos.x));
     
-    HANDLER_POSITIONS[0].set(cx - halfW * 0.3, 0, sideZ);
-    HANDLER_POSITIONS[1].set(cx + halfW * 0.3, 0, sideZ);
-    HANDLER_POSITIONS[2].set(cx, 0, behindZ);
+    const clampedSideZ = Math.max(2, Math.min(FIELD_LENGTH - 2, sideZ));
+    const clampedBehindZ = Math.max(2, Math.min(FIELD_LENGTH - 2, behindZ));
+    HANDLER_POSITIONS[0].set(cx - halfW * 0.3, 0, clampedSideZ);
+    HANDLER_POSITIONS[1].set(cx + halfW * 0.3, 0, clampedSideZ);
+    HANDLER_POSITIONS[2].set(cx, 0, clampedBehindZ);
     
     return HANDLER_POSITIONS;
 }
@@ -130,6 +134,7 @@ export function computeCutTarget(
         // Cut deep
         _temp.copy(cutter.movement.position);
         _temp.z += dir * 20;
+        _temp.z = Math.max(2, Math.min(FIELD_LENGTH - 2, _temp.z));
         _temp.x += (cutter.movement.position.x > 0 ? 1 : -1) * 3;
         return _temp;
     }
@@ -164,6 +169,7 @@ export function computeLeadPass(
 
     // Keep target in bounds
     _temp.x = Math.max(-FIELD_WIDTH / 2 + 1, Math.min(FIELD_WIDTH / 2 - 1, _temp.x));
-    
+    _temp.z = Math.max(1, Math.min(FIELD_LENGTH - 1, _temp.z));
+
     return _temp;
 }

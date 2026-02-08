@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Player } from '../entities/Player';
 import type { Disc } from '../entities/Disc';
 import { FIELD_LENGTH, FIELD_WIDTH } from '../data/Constants';
+import type { DebugSnapshot } from '../ai/TeamAI';
 
 export class Minimap {
     private canvas: HTMLCanvasElement;
@@ -171,6 +172,123 @@ export class Minimap {
             this.ctx.beginPath();
             this.ctx.arc(discPos.x, discPos.y, 4, 0, Math.PI * 2);
             this.ctx.fill();
+        }
+    }
+
+    /**
+     * Draw AI debug overlays on the minimap.
+     * Call after update() so it draws on top of players/disc.
+     */
+    drawDebug(
+        offSnap: DebugSnapshot | null,
+        defSnap: DebugSnapshot | null,
+        allPlayers: Array<{ index: number; movement: { position: THREE.Vector3 } }>,
+    ): void {
+        if (!this.visible) return;
+        const ctx = this.ctx;
+
+        // Helper to convert a raw {x,z} to minimap coords
+        const toMM = (x: number, z: number) => {
+            const dw = this.width - this.padding * 2;
+            const dh = this.height - this.padding * 2;
+            return {
+                x: this.padding + ((x + FIELD_WIDTH / 2) / FIELD_WIDTH) * dw,
+                y: this.padding + (z / FIELD_LENGTH) * dh,
+            };
+        };
+
+        // --- Receiver eval lines (thrower → receivers) ---
+        if (offSnap?.throwerPos && offSnap.receiverEvals.length > 0) {
+            const tp = toMM(offSnap.throwerPos.x, offSnap.throwerPos.z);
+            for (const ev of offSnap.receiverEvals) {
+                const rp = toMM(ev.receiverPos.x, ev.receiverPos.z);
+                const t = Math.max(0, Math.min(1, (ev.score + 0.3) / 0.6));
+                const r = Math.round((1 - t) * 255);
+                const g = Math.round(t * 255);
+                ctx.strokeStyle = ev.selected
+                    ? `rgba(0,255,255,0.9)`
+                    : `rgba(${r},${g},0,0.5)`;
+                ctx.lineWidth = ev.selected ? 2 : 1;
+                ctx.beginPath();
+                ctx.moveTo(tp.x, tp.y);
+                ctx.lineTo(rp.x, rp.y);
+                ctx.stroke();
+            }
+        }
+
+        // --- Lead pass target ---
+        if (offSnap?.leadPassTarget) {
+            const lt = toMM(offSnap.leadPassTarget.x, offSnap.leadPassTarget.z);
+            ctx.fillStyle = 'rgba(255,255,0,0.9)';
+            ctx.beginPath();
+            ctx.arc(lt.x, lt.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // --- Cut target lines ---
+        if (offSnap) {
+            for (const cv of offSnap.cutVisualizations) {
+                const from = toMM(cv.from.x, cv.from.z);
+                const to = toMM(cv.to.x, cv.to.z);
+                ctx.strokeStyle = cv.isActive ? 'rgba(255,136,0,0.8)' : 'rgba(120,120,120,0.4)';
+                ctx.lineWidth = cv.isActive ? 1.5 : 1;
+                ctx.beginPath();
+                ctx.moveTo(from.x, from.y);
+                ctx.lineTo(to.x, to.y);
+                ctx.stroke();
+            }
+        }
+
+        // --- Defensive matchup lines ---
+        if (defSnap) {
+            ctx.strokeStyle = 'rgba(200,200,200,0.25)';
+            ctx.lineWidth = 1;
+            for (const mu of defSnap.matchups) {
+                const defP = allPlayers.find(p => p.index === mu.defenderIndex);
+                const markP = allPlayers.find(p => p.index === mu.markIndex);
+                if (!defP || !markP) continue;
+                const dp = toMM(defP.movement.position.x, defP.movement.position.z);
+                const mp = toMM(markP.movement.position.x, markP.movement.position.z);
+                ctx.beginPath();
+                ctx.moveTo(dp.x, dp.y);
+                ctx.lineTo(mp.x, mp.y);
+                ctx.stroke();
+            }
+        }
+
+        // --- Formation markers ---
+        if (offSnap) {
+            ctx.strokeStyle = 'rgba(68,136,255,0.6)';
+            ctx.lineWidth = 1;
+            for (const fp of offSnap.formationPositions) {
+                const p = toMM(fp.x, fp.z);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // --- Force side arrow ---
+        if (defSnap?.forceSideOrigin) {
+            const orig = toMM(defSnap.forceSideOrigin.x, defSnap.forceSideOrigin.z);
+            const tip = toMM(
+                defSnap.forceSideOrigin.x + defSnap.forceSide * 4,
+                defSnap.forceSideOrigin.z,
+            );
+            ctx.strokeStyle = 'rgba(255,68,68,0.7)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(orig.x, orig.y);
+            ctx.lineTo(tip.x, tip.y);
+            ctx.stroke();
+            // Arrowhead
+            const angle = Math.atan2(tip.y - orig.y, tip.x - orig.x);
+            ctx.beginPath();
+            ctx.moveTo(tip.x, tip.y);
+            ctx.lineTo(tip.x - 5 * Math.cos(angle - 0.5), tip.y - 5 * Math.sin(angle - 0.5));
+            ctx.moveTo(tip.x, tip.y);
+            ctx.lineTo(tip.x - 5 * Math.cos(angle + 0.5), tip.y - 5 * Math.sin(angle + 0.5));
+            ctx.stroke();
         }
     }
 

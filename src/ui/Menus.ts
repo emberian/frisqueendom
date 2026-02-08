@@ -75,6 +75,9 @@ export class MenuSystem {
     }
     
     setState(state: MenuState): void {
+        if (state === 'none') {
+            this.container.style.display = 'none';
+        }
         this.currentState = state;
         this.render();
         this.onStateChange?.(state);

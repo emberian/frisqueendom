@@ -70,7 +70,7 @@ export class SpectatorOverlay {
             'background:rgba(5,14,27,0.74);font-family:monospace;font-size:10px;letter-spacing:0.04em;' +
             'color:rgba(255,255,255,0.8);text-align:center;';
         this.hintsEl.textContent =
-            'Keys: 1 auto | 2-5 cams | [ ] speed | 0 reset | P/Space pause';
+            'Keys: 1 auto | 2-5 cams | [ ] speed | 0 reset | P/Space pause | D debug';
         this.root.appendChild(this.hintsEl);
 
         window.addEventListener('resize', this.onResize);

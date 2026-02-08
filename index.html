@@ -91,7 +91,7 @@
             inset: 0;
             z-index: 1000;
         }
-        
+
         .menu-container {
             --menu-ui-scale: 1.3;
             position: absolute;
@@ -101,28 +101,12 @@
             justify-content: center;
             padding: clamp(8px, 1.4vw, 18px);
             background:
-                linear-gradient(164deg, rgba(5, 16, 31, 0.92) 0%, rgba(4, 12, 24, 0.96) 100%);
-            overflow: auto;
-        }
-
-        .menu-container::before {
-            content: "";
-            position: absolute;
-            inset: -15%;
-            background:
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.025), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.018)),
                 radial-gradient(ellipse at 18% 10%, rgba(51, 214, 255, 0.2), transparent 55%),
                 radial-gradient(ellipse at 82% 16%, rgba(255, 122, 34, 0.2), transparent 55%),
-                radial-gradient(ellipse at 52% 112%, rgba(84, 206, 90, 0.16), transparent 60%);
-            pointer-events: none;
-            animation: drift 16s ease-in-out infinite alternate;
-        }
-
-        .menu-container::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            pointer-events: none;
-            background: linear-gradient(to bottom, rgba(255, 255, 255, 0.025), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.018));
+                radial-gradient(ellipse at 52% 112%, rgba(84, 206, 90, 0.16), transparent 60%),
+                linear-gradient(164deg, rgba(5, 16, 31, 0.92) 0%, rgba(4, 12, 24, 0.96) 100%);
+            overflow: auto;
         }
 
         .title-screen,
@@ -1286,11 +1270,6 @@
             }
         }
 
-        @keyframes drift {
-            from { transform: translate3d(-1.5%, 0, 0) scale(1); }
-            to { transform: translate3d(1.5%, -1%, 0) scale(1.05); }
-        }
-
         @media (max-width: 980px) {
             .menu-container {
                 align-items: flex-start;
@@ -1301,9 +1280,6 @@
             .title-screen {
                 width: min(1320px, 97vw);
                 min-height: auto;
-                max-height: calc(100dvh - 20px);
-                overflow-y: auto;
-                scrollbar-gutter: stable;
             }
 
             .title-layout {
@@ -1389,7 +1365,6 @@
         @media (max-width: 720px) {
             .menu-container {
                 align-items: flex-start;
-                overflow: auto;
                 padding: 10px 8px 14px;
             }
 
@@ -1408,7 +1383,6 @@
 
             .title-screen {
                 min-height: auto;
-                max-height: calc(100dvh - 24px);
                 justify-content: flex-start;
             }
 

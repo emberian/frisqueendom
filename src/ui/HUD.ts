@@ -130,17 +130,19 @@ export class HUD {
     updateScore(home: number, away: number): void {
         const homeInitials = getInitials(this.homeTeamName);
         const awayInitials = getInitials(this.awayTeamName);
+        const badgeStyle = (color: string, size: string) =>
+            `display:inline-flex;align-items:center;justify-content:center;width:${size};height:${size};border-radius:50%;background:${color};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;`;
         if (window.innerWidth <= 920) {
             this.scoreEl.innerHTML =
-                `<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:${this.homeTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${homeInitials}</span><span style="color:${this.homeTeamColor};">${homeInitials}</span> <span style="color:white;">${home}</span></span>` +
+                `<span style="display:inline-flex;align-items:center;gap:4px;"><span style="${badgeStyle(this.homeTeamColor, '19px')}">${homeInitials}</span><span style="color:${this.homeTeamColor};">${homeInitials}</span> <span style="color:white;">${home}</span></span>` +
                 `<span style="padding:0 6px;color:rgba(255,255,255,0.45);">|</span>` +
-                `<span style="display:inline-flex;align-items:center;gap:4px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:${this.awayTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${awayInitials}</span><span style="color:${this.awayTeamColor};">${awayInitials}</span> <span style="color:white;">${away}</span></span>`;
+                `<span style="display:inline-flex;align-items:center;gap:4px;"><span style="color:white;">${away}</span> <span style="color:${this.awayTeamColor};">${awayInitials}</span><span style="${badgeStyle(this.awayTeamColor, '19px')}">${awayInitials}</span></span>`;
             return;
         }
         this.scoreEl.innerHTML =
-            `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${this.homeTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${homeInitials}</span><span style="color:${this.homeTeamColor};">${escapeHtml(this.homeTeamName.toUpperCase())}</span> <span style="color:white;">${home}</span></span>` +
+            `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="${badgeStyle(this.homeTeamColor, '20px')}">${homeInitials}</span><span style="color:${this.homeTeamColor};">${escapeHtml(this.homeTeamName.toUpperCase())}</span> <span style="color:white;">${home}</span></span>` +
             `<span style="padding:0 9px;color:rgba(255,255,255,0.45);">|</span>` +
-            `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${this.awayTeamColor};border:1px solid rgba(255,255,255,0.35);font-size:10px;color:#06101f;">${awayInitials}</span><span style="color:${this.awayTeamColor};">${escapeHtml(this.awayTeamName.toUpperCase())}</span> <span style="color:white;">${away}</span></span>`;
+            `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="color:white;">${away}</span> <span style="color:${this.awayTeamColor};">${escapeHtml(this.awayTeamName.toUpperCase())}</span><span style="${badgeStyle(this.awayTeamColor, '20px')}">${awayInitials}</span></span>`;
     }
 
     setTeams(

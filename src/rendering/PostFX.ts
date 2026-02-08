@@ -35,7 +35,7 @@ export class PostFX {
             uniforms: {
                 'tDiffuse': { value: null },
                 'offset': { value: 1.0 },
-                'darkness': { value: 1.2 },
+                'darkness': { value: 0.3 },
                 'aberration': { value: 0.002 }
             },
             vertexShader: `

@@ -15,6 +15,7 @@ import {
     decideDefense,
     moveToward,
 } from './PlayerAI';
+import type { ReceiverEvaluation } from './PlayerAI';
 import { updateMarkMirror } from './Marking';
 import type { ThrowParams } from '../data/Types';
 import { Random } from '../data/SeededRandom';
@@ -68,6 +69,30 @@ interface AIPersonalityModifiers {
     deepBias: number;
     resetBias: number;
     forceSwapRate: number;
+}
+
+export interface CutVisualization {
+    playerIndex: number;
+    from: THREE.Vector3;
+    to: THREE.Vector3;
+    isActive: boolean;
+}
+
+export interface DebugSnapshot {
+    throwerIndex: number | null;
+    throwerPos: THREE.Vector3 | null;
+    receiverEvals: ReceiverEvaluation[];
+    leadPassTarget: THREE.Vector3 | null;
+    cutVisualizations: CutVisualization[];
+    formationPositions: THREE.Vector3[];
+    matchups: Array<{ defenderIndex: number; markIndex: number }>;
+    forceSide: number;
+    forceSideOrigin: THREE.Vector3 | null;
+    helpDefenderIndex: number | null;
+    personality: string;
+    tendency: { aggression: number; tempo: number; widthBias: number; defenseFlex: number };
+    isOnOffense: boolean;
+    stallCount: number;
 }
 
 const PERSONALITY_MODIFIERS: Record<AIPersonality, AIPersonalityModifiers> = {
@@ -152,6 +177,10 @@ export class TeamAI {
         | Array<{ role: 'handler' | 'cutter'; x: number; z: number }>
         | null = null;
     private scriptedCuts: ScriptedCut[] = [];
+    debugEnabled = false;
+    private _debugSnapshot: DebugSnapshot | null = null;
+    private _lastDebugEvals: ReceiverEvaluation[] = [];
+    private _lastDebugLeadTarget: THREE.Vector3 | null = null;
     private baseProfile: AIDifficultyProfile = {
         decisionInterval: 0.1,
         activeCutDuration: 3.0,
@@ -304,6 +333,10 @@ export class TeamAI {
         return this.pendingThrow;
     }
 
+    getDebugSnapshot(): DebugSnapshot | null {
+        return this._debugSnapshot;
+    }
+
     getDebugActiveCutters(): number[] {
         return [...this.lastActiveCutterIndices];
     }
@@ -415,15 +448,22 @@ export class TeamAI {
             (cut) => cut.playerRole === 'cutter',
         );
 
+        const debugCuts: CutVisualization[] = [];
+        let debugThrowerIndex: number | null = null;
+        let debugThrowerPos: THREE.Vector3 | null = null;
+
         for (const player of team.players) {
             if (player.isControlled) continue;
 
             if (player.holdingDisc) {
+                debugThrowerIndex = player.index;
+                debugThrowerPos = player.movement.position.clone();
                 const decisionWindow =
                     this.profile.decisionInterval /
                     THREE.MathUtils.clamp(this.tendency.tempo, 0.82, 1.2);
                 if (this.decisionTimer > decisionWindow) {
                     this.decisionTimer = 0;
+                    const newEvals: ReceiverEvaluation[] = [];
                     const action = decideOffenseWithDisc(
                         player,
                         team.players,
@@ -432,11 +472,16 @@ export class TeamAI {
                         attackingEndzone,
                         windSpeed,
                         windDir,
+                        this.debugEnabled ? newEvals : undefined,
                     );
                     if (action.type === 'throw' && action.throwParams) {
                         this.pendingThrow = this.applyThrowVariance(
                             action.throwParams,
                         );
+                    }
+                    if (this.debugEnabled) {
+                        this._lastDebugEvals = newEvals;
+                        this._lastDebugLeadTarget = action.leadTarget ?? null;
                     }
                 }
                 player.update(dt, null);
@@ -507,6 +552,14 @@ export class TeamAI {
                     defenders,
                 );
                 if (action.type === 'move' && action.target) {
+                    if (this.debugEnabled) {
+                        debugCuts.push({
+                            playerIndex: player.index,
+                            from: player.movement.position.clone(),
+                            to: action.target.clone(),
+                            isActive: true,
+                        });
+                    }
                     moveToward(
                         player,
                         action.target,
@@ -542,6 +595,29 @@ export class TeamAI {
             }
 
             player.update(dt, null);
+        }
+
+        if (this.debugEnabled) {
+            const allFormation = [
+                ...stackPos.map(p => p.clone()),
+                ...handlerPos.map(p => p.clone()),
+            ];
+            this._debugSnapshot = {
+                throwerIndex: debugThrowerIndex,
+                throwerPos: debugThrowerPos,
+                receiverEvals: this._lastDebugEvals,
+                leadPassTarget: this._lastDebugLeadTarget,
+                cutVisualizations: debugCuts,
+                formationPositions: allFormation,
+                matchups: [],
+                forceSide: this.forceSide,
+                forceSideOrigin: null,
+                helpDefenderIndex: null,
+                personality: this.personality,
+                tendency: { ...this.tendency },
+                isOnOffense: true,
+                stallCount,
+            };
         }
     }
 
@@ -667,6 +743,29 @@ export class TeamAI {
 
             player.update(dt, null);
         }
+
+        if (this.debugEnabled) {
+            const matchupArr: Array<{ defenderIndex: number; markIndex: number }> = [];
+            for (const [def, mark] of this.matchups) {
+                matchupArr.push({ defenderIndex: def.index, markIndex: mark.index });
+            }
+            this._debugSnapshot = {
+                throwerIndex: null,
+                throwerPos: null,
+                receiverEvals: [],
+                leadPassTarget: null,
+                cutVisualizations: [],
+                formationPositions: [],
+                matchups: matchupArr,
+                forceSide: this.forceSide,
+                forceSideOrigin: discHolder ? discHolder.movement.position.clone() : null,
+                helpDefenderIndex: this.lastHelpDefenderIndex,
+                personality: this.personality,
+                tendency: { ...this.tendency },
+                isOnOffense: false,
+                stallCount,
+            };
+        }
     }
 
     private chooseActiveCutters(
@@ -693,6 +792,14 @@ export class TeamAI {
                 sidelinePressure,
             ),
         }));
+
+        // Penalize cutters that are already in their clearing phase
+        for (const entry of scored) {
+            const timer = this.cutTimers.get(entry.cutter) || 0;
+            if (timer > 2.5) {
+                entry.score -= 0.6;
+            }
+        }
 
         const current = cutters.find((c) => c.index === this.activeCutterIdx) || null;
         if (current) {
@@ -1193,6 +1300,8 @@ export class TeamAI {
         this.cutTimers.clear();
         this.lastActiveCutterIndices = [];
         this.lastHelpDefenderIndex = null;
+        this._lastDebugEvals = [];
+        this._lastDebugLeadTarget = null;
         this.reassignTimer = this.profile.reassignInterval + 1;
         this.decisionTimer = 0;
         this.activeCutterIdx = 3;

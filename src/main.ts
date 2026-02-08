@@ -11,6 +11,7 @@ import { Stadium } from './rendering/Stadium';
 import { ParticleSystem } from './rendering/Particles';
 import { SkySystem } from './rendering/Sky';
 import { PostFX } from './rendering/PostFX';
+import { DebugVisuals } from './debug/DebugVisuals';
 import {
     InputManager,
     type GameplayInputSource,
@@ -449,6 +450,9 @@ async function main() {
 
         // Camera
         const gameCamera = new GameCamera();
+        if (isSpectator) {
+            gameCamera.snapTo('overview', new THREE.Vector3(0, 0, 50));
+        }
         const gameCameraP2 = splitScreenEnabled || lanRemoteEnabled ? new GameCamera() : null;
 
         // Lighting
@@ -572,6 +576,7 @@ async function main() {
         const particles = new ParticleSystem(scene);
         const postFX = new PostFX();
         postFX.init(renderer, scene, gameCamera.camera);
+        const debugVisuals = new DebugVisuals();
 
         // Apply Cosmetics
         const progression = saveManager.getProgression();
@@ -1208,6 +1213,13 @@ async function main() {
         }
 
         function applySpectatorCamera(dt: number): void {
+            if (spectatorView === 'auto') {
+                // Full-field overview — target field center
+                spectatorTarget.set(0, 0, 50);
+                gameCamera.setMode('overview');
+                gameCamera.update(dt, spectatorTarget);
+                return;
+            }
             switch (resolveSpectatorView()) {
                 case 'broadcast':
                     spectatorTarget.set(0, 0, 50);
@@ -1584,6 +1596,7 @@ async function main() {
                 }
                 postFX.update(rawDt, gameCamera.camera);
                 postFX.render();
+                debugVisuals.render(renderer, gameCamera.camera);
                 return;
             }
 
@@ -1603,6 +1616,7 @@ async function main() {
             
             if (!splitScreenEnabled || !hasAwayHuman) {
                 postFX.render();
+                debugVisuals.render(renderer, gameCamera.camera);
                 return;
             }
 
@@ -1677,6 +1691,14 @@ async function main() {
                 }
                 if (keyJustPressed('Space') || keyJustPressed('KeyP')) {
                     spectatorPaused = !spectatorPaused;
+                }
+                if (keyJustPressed('KeyD')) {
+                    debugVisuals.setVisible(!debugVisuals.isVisible());
+                    homeAI.debugEnabled = debugVisuals.isVisible();
+                    awayAI.debugEnabled = debugVisuals.isVisible();
+                }
+                if (keyJustPressed('KeyF') && debugVisuals.isVisible()) {
+                    debugVisuals.cycleFocus();
                 }
                 spectatorOverlay?.setState(
                     spectatorView,
@@ -2391,6 +2413,15 @@ async function main() {
                 }
             }
 
+            // Debug visuals update
+            if (debugVisuals.isVisible()) {
+                debugVisuals.update(
+                    homeAI.getDebugSnapshot(),
+                    awayAI.getDebugSnapshot(),
+                    [...homeTeam.players, ...awayTeam.players],
+                );
+            }
+
             // Update marking animation state
             if (disc.state === 'held' && disc.holder && match.phase === 'live_play') {
                 const holder = disc.holder;
@@ -2617,6 +2648,13 @@ async function main() {
                 primarySlot.switching.controlledPlayer,
                 gameCamera.camera,
             );
+            if (debugVisuals.isVisible()) {
+                minimap.drawDebug(
+                    homeAI.getDebugSnapshot(),
+                    awayAI.getDebugSnapshot(),
+                    allPlayers,
+                );
+            }
 
             // Rain particles for weather
             if (weatherCondition === 'rain') {
@@ -2713,6 +2751,7 @@ async function main() {
                 halftimeOverlay.destroy();
                 postMatchOverlay.destroy();
                 spectatorOverlay?.destroy();
+                debugVisuals.dispose();
             }
         };
     }

@@ -26,6 +26,14 @@ export interface AIAction {
     target?: THREE.Vector3;
     sprint?: boolean;
     throwParams?: ThrowParams;
+    leadTarget?: THREE.Vector3;
+}
+
+export interface ReceiverEvaluation {
+    receiverIndex: number;
+    receiverPos: THREE.Vector3;
+    score: number;
+    selected: boolean;
 }
 
 export function decideOffenseWithDisc(
@@ -36,6 +44,7 @@ export function decideOffenseWithDisc(
     attackingEndzone: number,
     windSpeed: number = 0,
     windDir: number = 0,
+    evalBuffer?: ReceiverEvaluation[],
 ): AIAction {
     let bestReceiver: Player | null = null;
     let bestScore = -Infinity;
@@ -83,7 +92,7 @@ export function decideOffenseWithDisc(
             Math.min(1, windSpeed / 9) * Math.min(1, dist / 25);
         const pressurePenalty =
             nearestDefDist < 2.8
-                ? ((2.8 - nearestDefDist) / 2.8) * 0.45
+                ? ((2.8 - nearestDefDist) / 2.8) * 0.2
                 : 0;
         const resetBonus = stallCount >= 6 && yardGain < 4 ? 0.22 : 0;
         const bailoutBonus = stallCount >= 8 ? 0.18 : 0;
@@ -99,6 +108,15 @@ export function decideOffenseWithDisc(
             windPenalty * 0.12 -
             pressurePenalty;
 
+        if (evalBuffer) {
+            evalBuffer.push({
+                receiverIndex: tm.index,
+                receiverPos: tm.movement.position.clone(),
+                score,
+                selected: false,
+            });
+        }
+
         if (score > bestScore) {
             bestScore = score;
             bestOpenness = openness;
@@ -106,8 +124,13 @@ export function decideOffenseWithDisc(
         }
     }
 
+    if (evalBuffer && bestReceiver) {
+        const entry = evalBuffer.find(e => e.receiverIndex === bestReceiver!.index);
+        if (entry) entry.selected = true;
+    }
+
     const threshold =
-        stallCount < 4 ? 0.62 : stallCount < 7 ? 0.32 : stallCount < 9 ? 0.05 : -0.25;
+        stallCount < 3 ? 0.08 : stallCount < 5 ? -0.05 : stallCount < 7 ? -0.2 : -0.5;
     if (!bestReceiver || (bestScore < threshold && stallCount < 8)) {
         return { type: 'none' };
     }
@@ -185,7 +208,7 @@ export function decideOffenseWithDisc(
             throwType === 'scoober',
     };
 
-    return { type: 'throw', throwParams };
+    return { type: 'throw', throwParams, leadTarget: leadTarget.clone() };
 }
 
 export function decideOffenseWithoutDisc(
