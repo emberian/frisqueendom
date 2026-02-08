@@ -62,6 +62,8 @@ function checkFlightCatch(
 
     for (const player of allPlayers) {
         if (player.holdingDisc) continue;
+        // Self-pass forbidden: thrower cannot catch their own throw
+        if (player === disc.thrownBy) continue;
 
         // Standard catch check
         _handPos.copy(player.getHandPosition());

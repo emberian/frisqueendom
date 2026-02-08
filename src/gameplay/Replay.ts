@@ -197,7 +197,7 @@ export class ReplayRecorder {
     private matchSeed: number = 0;
     private teamNames: { home: string; away: string } = { home: 'Home', away: 'Away' };
     private matchSettings: MatchSettings = {
-        gameTo: 11,
+        gameTo: 15,
         homeTeam: 'home',
         awayTeam: 'away',
     };
@@ -226,6 +226,10 @@ export class ReplayRecorder {
      */
     recordSnapshot(state: FullMatchState): void {
         if (!this.isRecording) return;
+        
+        // Safety cap: don't exceed 150 snapshots to stay within localStorage limits
+        if (this.snapshots.length >= 150) return;
+
         const timestamp = (performance.now() - this.startTime) / 1000;
         const copy = JSON.parse(JSON.stringify(state)); // Deep copy
         this.snapshots.push({

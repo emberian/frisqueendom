@@ -4,6 +4,7 @@ import type { Disc } from '../entities/Disc';
 import { PointFlow } from './Point';
 import { positionForPull, createAIPullParams } from './Pull';
 import { FIELD_LENGTH, ENDZONE_DEPTH } from '../data/Constants';
+import { isInBounds, isInEndzone, getBrickMark, nearestInBoundsPoint } from './FieldBounds';
 import type { MatchPhase, TeamSide } from '../data/Types';
 
 export class Match {
@@ -17,7 +18,7 @@ export class Match {
     phaseTimer = 0;
     pullReady = false;
     playerTeam: TeamSide = 'home';
-    private gameTo = 11;
+    private gameTo = 15;
     private groundedTimer = 0;
 
     private stateText = '';
@@ -161,22 +162,17 @@ export class Match {
             this.phase = 'live_play';
             this.point.start();
         } else if (disc.state === 'on_ground') {
-            // Pull landed — force nearest offensive player to pick up
-            const offense =
-                this.offenseTeam === 'home' ? homeTeam : awayTeam;
-            let nearest = offense.players[0];
-            let nearestDistSq = Infinity;
-            for (const p of offense.players) {
-                const distSq = p.movement.position.distanceToSquared(
-                    disc.position,
-                );
-                if (distSq < nearestDistSq) {
-                    nearestDistSq = distSq;
-                    nearest = p;
-                }
+            // Pull landed — check OB, snap position, then let players run to disc
+            if (!isInBounds(disc.position)) {
+                // Pull OB: receiver gets disc at brick mark near their defending endzone
+                const defendingEndzone = this.attackingEndzone[this.offenseTeam] === 0
+                    ? FIELD_LENGTH : 0;
+                const brick = getBrickMark(defendingEndzone);
+                disc.resetToPosition(brick);
+                this.showText('BRICK');
             }
-            disc.pickup(nearest);
-            disc.previousState = disc.state;
+
+            disc.previousState = 'on_ground'; // Prevent Point from triggering turnover
             this.phase = 'live_play';
             this.point.start();
         }
@@ -188,10 +184,10 @@ export class Match {
         awayTeam: Team,
         disc: Disc,
     ): void {
-        // Safety net: if disc is on ground with no holder for >2s, force pickup
+        // Safety net: if disc is on ground with no holder for >5s, warp player to disc
         if (disc.state === 'on_ground' && !disc.holder) {
             this.groundedTimer += dt;
-            if (this.groundedTimer > 2.0) {
+            if (this.groundedTimer > 5.0) {
                 const offense =
                     this.offenseTeam === 'home' ? homeTeam : awayTeam;
                 let nearest = offense.players[0];
@@ -205,6 +201,9 @@ export class Match {
                         nearest = p;
                     }
                 }
+                // Move player to disc (not disc to player)
+                nearest.movement.position.copy(disc.position).setY(0);
+                nearest.movement.velocity.set(0, 0, 0);
                 disc.pickup(nearest);
                 this.groundedTimer = 0;
                 this.point.start();
@@ -223,10 +222,38 @@ export class Match {
         );
 
         if (this.point.turnover) {
-            this.phase = 'turnover_reset';
-            this.phaseTimer = 0;
-            this.swapPossession();
-            this.showText('TURNOVER');
+            // Callahan: defensive interception caught in the defense's attacking endzone
+            const defenseTeam: TeamSide = this.offenseTeam === 'home' ? 'away' : 'home';
+            if (
+                this.point.turnoverReason === 'interception' &&
+                disc.holder &&
+                isInEndzone(disc.holder.movement.position, this.attackingEndzone[defenseTeam])
+            ) {
+                // Callahan goal — score for the defensive team
+                this.phase = 'score';
+                this.phaseTimer = 0;
+                this.lastScorerInfo = {
+                    team: defenseTeam,
+                    playerId: disc.holder.id,
+                    playerName:
+                        disc.holder.stats?.fullName ??
+                        `${disc.holder.role} #${disc.holder.index + 1}`,
+                };
+                const idx = defenseTeam === 'home' ? 0 : 1;
+                this.score[idx]++;
+                // Swap offense so point_reset correctly makes the scorer pull
+                this.offenseTeam = defenseTeam;
+                if (this.score[idx] >= this.gameTo) {
+                    this.showText(defenseTeam === 'home' ? 'HOME WINS!' : 'AWAY WINS!');
+                } else {
+                    this.showText('CALLAHAN!');
+                }
+            } else {
+                this.phase = 'turnover_reset';
+                this.phaseTimer = 0;
+                this.swapPossession();
+                this.showText('TURNOVER');
+            }
         }
 
         if (this.point.scored) {
@@ -260,33 +287,40 @@ export class Match {
         homeTeam: Team,
         awayTeam: Team,
     ): void {
-        this.phaseTimer += dt;
-        if (this.phaseTimer > 1.0) {
-            // Ensure the new offense legally owns the disc before resuming.
-            const offense =
-                this.offenseTeam === 'home' ? homeTeam : awayTeam;
-            const offenseHasDisc =
-                disc.holder !== null && offense.players.includes(disc.holder);
+        // On first frame: snap disc to correct position, release from old holder
+        if (this.phaseTimer === 0) {
+            // Release disc from old holder and mark as ground disc
+            if (disc.holder) {
+                disc.holder.holdingDisc = false;
+                disc.holder = null;
+            }
+            disc.state = 'on_ground';
+            disc.previousState = 'on_ground'; // Prevent Point from re-triggering turnover
+            disc.velocity.set(0, 0, 0);
 
-            if (!offenseHasDisc) {
-                let pickupTarget = offense.players[0];
-                let nearestDistSq = Infinity;
-                for (const p of offense.players) {
-                    const distSq = p.movement.position.distanceToSquared(
-                        disc.position,
-                    );
-                    if (distSq < nearestDistSq) {
-                        nearestDistSq = distSq;
-                        pickupTarget = p;
-                    }
-                }
-
-                if (disc.holder && disc.holder !== pickupTarget) {
-                    disc.holder.holdingDisc = false;
-                }
-                disc.pickup(pickupTarget);
+            // Snap disc to nearest in-bounds point if it landed OB
+            if (!isInBounds(disc.position)) {
+                const inBounds = nearestInBoundsPoint(disc.position);
+                disc.position.copy(inBounds);
+                disc.mesh.position.copy(inBounds);
             }
 
+            // If disc is in the new offense's own (defending) endzone, walk to goal line
+            const atkEz = this.attackingEndzone[this.offenseTeam];
+            const defEz = atkEz === 0 ? FIELD_LENGTH : 0;
+            if (isInEndzone(disc.position, defEz)) {
+                const goalLineZ = defEz === 0
+                    ? ENDZONE_DEPTH
+                    : FIELD_LENGTH - ENDZONE_DEPTH;
+                disc.position.setZ(goalLineZ).setY(0);
+                disc.mesh.position.copy(disc.position);
+            }
+        }
+
+        this.phaseTimer += dt;
+
+        // Brief delay for "TURNOVER" text, then resume play — let players run to disc
+        if (this.phaseTimer > 0.5) {
             this.phase = 'live_play';
             this.point.start();
         }
@@ -313,6 +347,11 @@ export class Match {
         this.offenseTeam =
             this.offenseTeam === 'home' ? 'away' : 'home';
         this.lastScorerInfo = null;
+
+        // Teams switch ends after each score (USAU/WFDF rule)
+        const tmp = this.attackingEndzone.home;
+        this.attackingEndzone.home = this.attackingEndzone.away;
+        this.attackingEndzone.away = tmp;
 
         // Reset all players
         for (const p of [...homeTeam.players, ...awayTeam.players]) {

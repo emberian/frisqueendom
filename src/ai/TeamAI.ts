@@ -14,10 +14,12 @@ import {
     decideOffenseWithoutDisc,
     decideDefense,
     moveToward,
+    findBestIntercept,
 } from './PlayerAI';
 import type { ReceiverEvaluation } from './PlayerAI';
 import { updateMarkMirror } from './Marking';
 import type { ThrowParams } from '../data/Types';
+import type { DiscBridge } from '../physics/DiscBridge';
 import { Random } from '../data/SeededRandom';
 import type { Formation, Play } from '../data/SaveLoad';
 import { FIELD_WIDTH } from '../data/Constants';
@@ -448,6 +450,41 @@ export class TeamAI {
             (cut) => cut.playerRole === 'cutter',
         );
 
+        // Disc on ground with no holder: send nearest non-controlled player to pick it up
+        let pickupRunner: Player | null = null;
+        if (disc.state === 'on_ground' && !disc.holder) {
+            let bestDistSq = Infinity;
+            for (const p of team.players) {
+                if (p.isControlled) continue;
+                const dSq = p.movement.position.distanceToSquared(discPos);
+                if (dSq < bestDistSq) {
+                    bestDistSq = dSq;
+                    pickupRunner = p;
+                }
+            }
+        }
+
+        // When disc is in flight, extrapolate trajectory and find intercept targets
+        const interceptTargets = new Map<Player, THREE.Vector3>();
+        if (disc.state === 'in_flight') {
+            const candidates: Array<{ player: Player; pos: THREE.Vector3; time: number }> = [];
+            for (const p of team.players) {
+                if (p.isControlled || p.holdingDisc) continue;
+                const pos = findBestIntercept(p, disc.position, disc.velocity);
+                if (pos) {
+                    const dx = p.movement.position.x - pos.x;
+                    const dz = p.movement.position.z - pos.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    const t = dist / Math.max(p.movement.sprintSpeed, 1);
+                    candidates.push({ player: p, pos: pos.clone(), time: t });
+                }
+            }
+            candidates.sort((a, b) => a.time - b.time);
+            for (let i = 0; i < Math.min(2, candidates.length); i++) {
+                interceptTargets.set(candidates[i].player, candidates[i].pos);
+            }
+        }
+
         const debugCuts: CutVisualization[] = [];
         let debugThrowerIndex: number | null = null;
         let debugThrowerPos: THREE.Vector3 | null = null;
@@ -455,13 +492,38 @@ export class TeamAI {
         for (const player of team.players) {
             if (player.isControlled) continue;
 
+            // If this player is assigned to pick up a ground disc, sprint to it
+            if (player === pickupRunner) {
+                moveToward(player, discPos, dt, true);
+                player.update(dt, null);
+                continue;
+            }
+
+            // If disc is in flight and this player has an intercept target, sprint to it
+            if (interceptTargets.has(player)) {
+                moveToward(player, interceptTargets.get(player)!, dt, true);
+                player.update(dt, null);
+                continue;
+            }
+
             if (player.holdingDisc) {
+                // Thrower should face the attacking direction
+                const targetFacing = attackingEndzone === 0 ? Math.PI : 0;
+                let facingDiff = targetFacing - player.movement.facing;
+                while (facingDiff > Math.PI) facingDiff -= Math.PI * 2;
+                while (facingDiff < -Math.PI) facingDiff += Math.PI * 2;
+                player.movement.facing += facingDiff * Math.min(1, 6 * dt);
+
                 debugThrowerIndex = player.index;
                 debugThrowerPos = player.movement.position.clone();
                 const decisionWindow =
                     this.profile.decisionInterval /
                     THREE.MathUtils.clamp(this.tendency.tempo, 0.82, 1.2);
-                if (this.decisionTimer > decisionWindow) {
+                
+                // STAGGERED: only check every N frames, and offset by player index
+                const staggerFrame = (Math.floor(this.decisionTimer * 60) + player.index) % 6 === 0;
+                
+                if (staggerFrame && this.decisionTimer > decisionWindow) {
                     this.decisionTimer = 0;
                     const newEvals: ReceiverEvaluation[] = [];
                     const action = decideOffenseWithDisc(
@@ -475,9 +537,14 @@ export class TeamAI {
                         this.debugEnabled ? newEvals : undefined,
                     );
                     if (action.type === 'throw' && action.throwParams) {
-                        this.pendingThrow = this.applyThrowVariance(
-                            action.throwParams,
-                        );
+                        const corrected = action.leadTarget
+                            ? this.correctThrowAim(
+                                  action.throwParams,
+                                  action.leadTarget,
+                                  disc.bridge,
+                              )
+                            : action.throwParams;
+                        this.pendingThrow = this.applyThrowVariance(corrected);
                     }
                     if (this.debugEnabled) {
                         this._lastDebugEvals = newEvals;
@@ -1275,6 +1342,108 @@ export class TeamAI {
         };
         this.forceSide = sample() < 0.5 ? -1 : 1;
         this.forceSwapTimer = 1.6 + sample() * 2.4;
+    }
+
+    /**
+     * Iterative throw solver using an aim-point approach.
+     * Each iteration: predict trajectory, measure where the disc actually goes,
+     * shift the aim point opposite to the error, recompute direction from scratch.
+     * Direction is never rotated incrementally so it can't accumulate or diverge.
+     */
+    private correctThrowAim(
+        params: ThrowParams,
+        leadTarget: THREE.Vector3,
+        bridge: DiscBridge,
+    ): ThrowParams {
+        const targetDist = params.position.distanceTo(leadTarget);
+        if (targetDist < 3) return params;
+
+        // Aim point starts at the lead target; each iteration shifts it
+        // to compensate for where the disc actually ends up.
+        let aimX = leadTarget.x;
+        let aimZ = leadTarget.z;
+        let curSpeed = params.speed;
+        let curUpY = params.direction.y;
+        let bestParams = params;
+        let bestError = Infinity;
+
+        for (let iter = 0; iter < 3; iter++) {
+            // Build direction from throw position to current aim point
+            const dx = aimX - params.position.x;
+            const dz = aimZ - params.position.z;
+            const hLen = Math.sqrt(dx * dx + dz * dz) || 1;
+            const curDir = new THREE.Vector3(
+                dx / hLen, curUpY, dz / hLen,
+            ).normalize();
+
+            const iterParams: ThrowParams = {
+                ...params,
+                speed: curSpeed,
+                direction: curDir,
+            };
+            const traj = bridge.predictThrow(iterParams, 4.0, 40);
+            if (traj.length < 6) break;
+
+            // Find closest catchable approach to target (in XZ)
+            let catchIdx = -1;
+            let catchDistSq = Infinity;
+            let anyIdx = 0;
+            let anyDistSq = Infinity;
+            for (let i = 0; i < traj.length; i += 3) {
+                const ex = traj[i] - leadTarget.x;
+                const ez = traj[i + 2] - leadTarget.z;
+                const dSq = ex * ex + ez * ez;
+                if (dSq < anyDistSq) { anyDistSq = dSq; anyIdx = i; }
+                const y = traj[i + 1];
+                if (y >= 0.3 && y <= 3.0 && dSq < catchDistSq) {
+                    catchDistSq = dSq;
+                    catchIdx = i;
+                }
+            }
+
+            const useIdx = catchIdx >= 0 ? catchIdx : anyIdx;
+            const errX = traj[useIdx] - leadTarget.x;
+            const errZ = traj[useIdx + 2] - leadTarget.z;
+            const errDist = Math.sqrt(errX * errX + errZ * errZ);
+
+            if (errDist < bestError) {
+                bestError = errDist;
+                bestParams = iterParams;
+            }
+            if (catchIdx >= 0 && errDist < 1.5) break;
+
+            // Shift aim point opposite to error (gain < 1 for stability)
+            aimX -= errX * 0.7;
+            aimZ -= errZ * 0.7;
+
+            // Speed: along-track error check
+            const ndx = dx / hLen;
+            const ndz = dz / hLen;
+            const alongErr = errX * ndx + errZ * ndz;
+            if (alongErr > 2) {
+                curSpeed *= 1 - Math.min(0.25, alongErr * 0.025);
+            } else if (alongErr < -2) {
+                curSpeed *= 1 + Math.min(0.2, -alongErr * 0.025);
+            }
+            curSpeed = THREE.MathUtils.clamp(curSpeed, 8, 28);
+
+            // Height: if disc not at catchable height, adjust loft
+            if (catchIdx < 0) {
+                const y = traj[anyIdx + 1];
+                if (y < 0.3) curUpY += 0.02;
+                else if (y > 3.0) curUpY -= 0.015;
+            }
+        }
+
+        // Safety: if best result diverged > 30° from original, use original
+        if (bestParams !== params) {
+            const dot =
+                bestParams.direction.x * params.direction.x +
+                bestParams.direction.z * params.direction.z;
+            if (dot < 0.87) return params; // cos(30°) ≈ 0.866
+        }
+
+        return bestParams;
     }
 
     private applyThrowVariance(throwParams: ThrowParams): ThrowParams {

@@ -107,6 +107,7 @@ export interface PlayerState {
 }
 
 export interface FullMatchState {
+    timestamp: number;
     disc: DiscState;
     players: PlayerState[];
     score: [number, number];

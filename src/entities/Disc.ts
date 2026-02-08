@@ -16,6 +16,7 @@ export class Disc {
     mesh: THREE.Group;
     justCaught = false;
     thrownByTeam: 'home' | 'away' | null = null;
+    thrownBy: Player | null = null;
     isRolling = false;
     private rollTimer = 0;
     private hasSkipped = false;
@@ -34,9 +35,11 @@ export class Disc {
         player.holdingDisc = true;
         this.justCaught = true;
         this.thrownByTeam = null;
+        this.thrownBy = null;
     }
 
     throwDisc(params: ThrowParams, team: 'home' | 'away'): void {
+        this.thrownBy = this.holder;
         if (this.holder) {
             this.holder.holdingDisc = false;
         }
@@ -169,6 +172,7 @@ export class Disc {
         this.holder = null;
         this.justCaught = false;
         this.thrownByTeam = null;
+        this.thrownBy = null;
         this.isRolling = false;
         this.rollTimer = 0;
         this.hasSkipped = false;

@@ -28,6 +28,7 @@ export type MenuState =
     | 'credits'
     | 'practice_menu'
     | 'locker'
+    | 'paused'
     | 'none';
 
 export type MultiplayerMode = 'single' | 'local_split' | 'lan_remote' | 'lan_spectator';
@@ -48,17 +49,47 @@ export interface QuickMatchConfig {
 export class MenuSystem {
     private container: HTMLElement;
     private currentState: MenuState = 'title';
+    private previousState: MenuState = 'title';
     private onStateChange?: (state: MenuState) => void;
+    private navigate?: (path: string, params?: Record<string, string>) => void;
     private settings: GameSettings;
     private tempSettings: GameSettings;
-    
-    constructor(container: HTMLElement, onStateChange?: (state: MenuState) => void) {
+    private pauseMenuCallbacks: { onResume: () => void; onQuit: () => void } | null = null;
+
+    constructor(
+        container: HTMLElement,
+        onStateChange?: (state: MenuState) => void,
+        navigate?: (path: string, params?: Record<string, string>) => void,
+    ) {
         this.container = container;
         this.onStateChange = onStateChange;
+        this.navigate = navigate;
         this.settings = saveManager.getSettings();
         this.tempSettings = cloneSettings(this.settings);
-        
+
         this.render();
+    }
+
+    /** Navigate via router if available. Returns true if navigated. */
+    private nav(path: string, params?: Record<string, string>): boolean {
+        if (this.navigate) { this.navigate(path, params); return true; }
+        return false;
+    }
+
+    /** Pre-fill match setup form from URL query params. */
+    setMatchSetupDefaults(config: Partial<QuickMatchConfig>): void {
+        if (this.currentState !== 'match_setup') return;
+        const set = (id: string, val?: string | number) => {
+            if (val == null) return;
+            const el = this.container.querySelector('#' + id) as HTMLSelectElement | null;
+            if (el) el.value = String(val);
+        };
+        set('team-color', config.color);
+        set('difficulty', config.difficulty);
+        set('game-to', config.gameTo);
+        set('time-of-day', config.timeOfDay);
+        set('weather', config.weather);
+        if (config.multiplayerMode) set('multiplayer-mode', config.multiplayerMode);
     }
 
     private getActiveMenuSettings(): GameSettings {
@@ -77,10 +108,25 @@ export class MenuSystem {
     setState(state: MenuState): void {
         if (state === 'none') {
             this.container.style.display = 'none';
+        } else {
+            this.container.style.display = 'flex';
         }
+        
+        if (state !== 'settings' && state !== 'paused') {
+            this.previousState = this.currentState;
+        }
+        
         this.currentState = state;
         this.render();
         this.onStateChange?.(state);
+    }
+
+    private returnToPreviousState(): void {
+        if (this.previousState === 'none' && this.pauseMenuCallbacks) {
+            this.setState('paused');
+        } else {
+            this.setState(this.previousState);
+        }
     }
     
     private render(): void {
@@ -109,6 +155,9 @@ export class MenuSystem {
                 break;
             case 'locker':
                 this.renderLockerMenu();
+                break;
+            case 'paused':
+                this.renderPausedUI();
                 break;
         }
     }
@@ -216,14 +265,18 @@ export class MenuSystem {
         this.container.appendChild(title);
         
         title.querySelector('#quick-local')?.addEventListener('click', () => {
-            window.dispatchEvent(new CustomEvent('startQuickMatch', {
-                detail: { color: 'blue', difficulty: 'normal', gameTo: 11, multiplayerMode: 'single' }
-            }));
-            this.setState('none');
+            if (this.navigate) {
+                this.navigate('/play', { color: 'blue', difficulty: 'normal', gameTo: '15', multiplayer: 'single' });
+            } else {
+                window.dispatchEvent(new CustomEvent('startQuickMatch', {
+                    detail: { color: 'blue', difficulty: 'normal', gameTo: 15, multiplayerMode: 'single' }
+                }));
+                this.setState('none');
+            }
         });
 
         title.querySelector('#quick-online')?.addEventListener('click', () => {
-            this.setState('match_setup');
+            this.nav('/setup') || this.setState('match_setup');
         });
 
         const openCareer = () => {
@@ -238,32 +291,34 @@ export class MenuSystem {
         title.querySelector('#menu-career')?.addEventListener('click', openCareer);
 
         title.querySelector('#menu-match')?.addEventListener('click', () => {
-            this.setState('match_setup');
+            this.nav('/setup') || this.setState('match_setup');
         });
 
         title.querySelector('#menu-watch')?.addEventListener('click', () => {
-            this.setState('match_setup');
+            this.nav('/setup') || this.setState('match_setup');
         });
 
         title.querySelector('#menu-practice')?.addEventListener('click', () => {
-            this.setState('practice_menu');
+            this.nav('/practice') || this.setState('practice_menu');
         });
 
         title.querySelector('#menu-locker')?.addEventListener('click', () => {
-            this.setState('locker');
+            this.nav('/locker') || this.setState('locker');
         });
 
         title.querySelector('#menu-tutorial')?.addEventListener('click', () => {
-            this.setState('none');
-            window.dispatchEvent(new CustomEvent('startTutorial'));
+            if (!this.nav('/tutorial')) {
+                this.setState('none');
+                window.dispatchEvent(new CustomEvent('startTutorial'));
+            }
         });
 
         title.querySelector('#menu-settings')?.addEventListener('click', () => {
-            this.setState('settings');
+            this.nav('/settings') || this.setState('settings');
         });
 
         title.querySelector('#menu-credits')?.addEventListener('click', () => {
-            this.setState('credits');
+            this.nav('/credits') || this.setState('credits');
         });
 
         const refreshBtn = title.querySelector('#refresh-lobby');
@@ -317,13 +372,13 @@ export class MenuSystem {
     private renderCareerMenu(): void {
         const career = loadCareer();
         if (!career) {
-            this.setState('title');
+            this.nav('/title') || this.setState('title');
             return;
         }
 
         const manager = CareerManager.load(career.careerSlot);
         if (!manager) {
-            this.setState('title');
+            this.nav('/title') || this.setState('title');
             return;
         }
 
@@ -499,10 +554,10 @@ export class MenuSystem {
         });
         
         menu.querySelector('#back')?.addEventListener('click', () => {
-            this.setState('title');
+            this.nav('/title') || this.setState('title');
         });
     }
-    
+
     private renderMatchSetup(): void {
         const menu = document.createElement('div');
         menu.className = 'match-setup';
@@ -532,8 +587,8 @@ export class MenuSystem {
                 <label>Game to:</label>
                 <select id="game-to">
                     <option value="7">7 points</option>
-                    <option value="11" selected>11 points</option>
-                    <option value="15">15 points</option>
+                    <option value="11">11 points</option>
+                    <option value="15" selected>15 points</option>
                 </select>
 
                 <label>Time of Day:</label>
@@ -624,6 +679,19 @@ export class MenuSystem {
                 .trim()
                 .slice(0, 64);
 
+            if (this.navigate) {
+                const p: Record<string, string> = { color, difficulty, gameTo: String(gameTo) };
+                if (multiplayerMode !== 'single') p.multiplayer = multiplayerMode;
+                if (timeOfDay) p.time = timeOfDay;
+                if (weather) p.weather = weather;
+                if (multiplayerMode === 'lan_remote') {
+                    if (lanServerUrl) p.relay = lanServerUrl;
+                    p.room = lanRoom || 'fqd-room-1';
+                }
+                this.navigate('/play', p);
+                return;
+            }
+
             this.setState('none');
             const detail: QuickMatchConfig = {
                 color,
@@ -651,6 +719,14 @@ export class MenuSystem {
             const timeOfDay = (menu.querySelector('#time-of-day') as HTMLSelectElement).value;
             const weather = (menu.querySelector('#weather') as HTMLSelectElement).value;
 
+            if (this.navigate) {
+                const p: Record<string, string> = { color, difficulty, gameTo: String(gameTo) };
+                if (timeOfDay) p.time = timeOfDay;
+                if (weather) p.weather = weather;
+                this.navigate('/watch', p);
+                return;
+            }
+
             this.setState('none');
             const detail: QuickMatchConfig = {
                 color,
@@ -667,9 +743,9 @@ export class MenuSystem {
                 }),
             );
         });
-        
+
         menu.querySelector('#back')?.addEventListener('click', () => {
-            this.setState('title');
+            this.nav('/title') || this.setState('title');
         });
     }
     
@@ -829,12 +905,12 @@ export class MenuSystem {
         menu.querySelector('#save-settings')?.addEventListener('click', () => {
             this.settings = cloneSettings(this.tempSettings);
             saveManager.saveSettings(this.settings);
-            this.setState('title');
+            this.returnToPreviousState();
         });
         
         menu.querySelector('#cancel-settings')?.addEventListener('click', () => {
             this.tempSettings = cloneSettings(this.settings);
-            this.setState('title');
+            this.returnToPreviousState();
         });
         
         menu.querySelector('#reset-settings')?.addEventListener('click', () => {
@@ -874,7 +950,7 @@ export class MenuSystem {
                 saveManager.deleteSave();
                 this.settings = getDefaultSettings();
                 this.tempSettings = getDefaultSettings();
-                this.setState('title');
+                this.nav('/title') || this.setState('title');
             }
         });
     }
@@ -907,7 +983,7 @@ export class MenuSystem {
         this.container.appendChild(credits);
         
         credits.querySelector('#back')?.addEventListener('click', () => {
-            this.setState('title');
+            this.nav('/title') || this.setState('title');
         });
     }
 
@@ -922,7 +998,7 @@ export class MenuSystem {
         }
         if (filled.length === 1) {
             setActiveCareerSlot(filled[0].idx);
-            this.setState('career_menu');
+            this.nav('/career') || this.setState('career_menu');
             return;
         }
 
@@ -951,7 +1027,7 @@ export class MenuSystem {
                 const slot = Number(button.dataset.slot || 0);
                 setActiveCareerSlot(slot);
                 dialog.remove();
-                this.setState('career_menu');
+                this.nav('/career') || this.setState('career_menu');
             });
         });
         dialog.querySelector('#cancel-slot')?.addEventListener('click', () => dialog.remove());
@@ -1055,10 +1131,10 @@ export class MenuSystem {
             saveCareer(career, slot);
             
             dialog.remove();
-            this.setState('career_menu');
+            this.nav('/career') || this.setState('career_menu');
         });
     }
-    
+
     private showRosterScreen(): void {
         const career = loadCareer();
         if (!career) return;
@@ -2334,9 +2410,14 @@ export class MenuSystem {
     
     // Pause menu overlay
     showPauseMenu(onResume: () => void, onQuit: () => void): void {
-        const existing = this.container.querySelector('.pause-menu');
-        if (existing) return;
-        
+        this.pauseMenuCallbacks = { onResume, onQuit };
+        this.setState('paused');
+    }
+
+    private renderPausedUI(): void {
+        const onResume = this.pauseMenuCallbacks?.onResume || (() => {});
+        const onQuit = this.pauseMenuCallbacks?.onQuit || (() => {});
+
         const pause = document.createElement('div');
         pause.className = 'pause-menu';
         pause.innerHTML = `
@@ -2350,17 +2431,17 @@ export class MenuSystem {
         this.container.appendChild(pause);
         
         pause.querySelector('#resume')?.addEventListener('click', () => {
-            pause.remove();
+            this.setState('none');
             onResume();
         });
         
         pause.querySelector('#settings')?.addEventListener('click', () => {
-            this.renderSettings();
+            this.setState('settings');
         });
         
         pause.querySelector('#quit')?.addEventListener('click', () => {
             if (confirm('Quit current match? Progress will not be saved.')) {
-                pause.remove();
+                this.pauseMenuCallbacks = null;
                 onQuit();
             }
         });
@@ -2406,6 +2487,10 @@ export class MenuSystem {
         // Add event listeners for drill start buttons
         drills.forEach(({ type }) => {
             menu.querySelector(`[data-drill-start="${type}"]`)?.addEventListener('click', () => {
+                if (this.navigate) {
+                    this.navigate('/drill', { type });
+                    return;
+                }
                 this.setState('none');
                 window.dispatchEvent(new CustomEvent('startPracticeDrill', {
                     detail: { drillType: type }
@@ -2414,7 +2499,7 @@ export class MenuSystem {
         });
 
         menu.querySelector('#back')?.addEventListener('click', () => {
-            this.setState('title');
+            this.nav('/title') || this.setState('title');
         });
     }
 
@@ -2502,7 +2587,7 @@ export class MenuSystem {
         });
 
         menu.querySelector('#back')?.addEventListener('click', () => {
-            this.setState('title');
+            this.nav('/title') || this.setState('title');
         });
     }
 

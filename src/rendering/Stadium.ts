@@ -6,6 +6,8 @@ export class Stadium {
     private crowdMesh: THREE.InstancedMesh | null = null;
     private crowdTime = 0;
     private homeColor: number;
+    private excitement = 0.2;
+    private cheerTimer = 0;
 
     constructor(scene: THREE.Scene, homeColor: number = 0x1a73e8) {
         this.homeColor = homeColor;
@@ -29,18 +31,33 @@ export class Stadium {
 
         personMat.onBeforeCompile = (shader) => {
             shader.uniforms.time = { value: 0 };
+            shader.uniforms.excitement = { value: 0.2 };
+            shader.uniforms.cheer = { value: 0 };
+            
             shader.vertexShader = `
                 uniform float time;
+                uniform float excitement;
+                uniform float cheer;
             ` + shader.vertexShader;
+            
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 `
                 #include <begin_vertex>
                 float id = float(gl_InstanceID);
-                float bounce = sin(time * 4.0 + id * 0.5) * 0.05;
+                
+                // Base bobbing scales with excitement
+                float bobSpeed = 3.0 + excitement * 5.0;
+                float bobAmp = 0.02 + excitement * 0.08;
+                float bounce = sin(time * bobSpeed + id * 0.5) * bobAmp;
+                
+                // Synchronized jump on cheer
+                float jump = cheer * 0.25 * sin(time * 12.0 + id * 0.1);
+                jump = max(0.0, jump); // only up
+                
                 if (transformed.y > 0.0) {
-                    transformed.y += bounce;
-                    transformed.x += sin(time * 2.0 + id) * 0.02;
+                    transformed.y += bounce + jump;
+                    transformed.x += sin(time * 2.0 + id) * 0.02 * excitement;
                 }
                 `
             );
@@ -92,11 +109,24 @@ export class Stadium {
         this.group.add(this.crowdMesh);
     }
 
-    update(dt: number): void {
+    update(dt: number, excitement: number = 0.2): void {
         this.crowdTime += dt;
-        if (this.group.userData.crowdShader) {
-            this.group.userData.crowdShader.uniforms.time.value = this.crowdTime;
+        this.excitement = excitement;
+        
+        if (this.cheerTimer > 0) {
+            this.cheerTimer -= dt;
         }
+
+        if (this.group.userData.crowdShader) {
+            const shader = this.group.userData.crowdShader;
+            shader.uniforms.time.value = this.crowdTime;
+            shader.uniforms.excitement.value = this.excitement;
+            shader.uniforms.cheer.value = Math.max(0, this.cheerTimer > 0 ? 1 : 0);
+        }
+    }
+
+    triggerCheer(duration: number = 1.5): void {
+        this.cheerTimer = duration;
     }
 
     private createBleachers(): void {

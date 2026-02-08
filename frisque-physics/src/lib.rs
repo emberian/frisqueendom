@@ -11,6 +11,32 @@ mod noise;
 use math::{Vec3, Quat};
 use disc::{DiscState, DiscProfile, default_ultimate_disc};
 
+/// Build a DiscState from throw parameters without mutating anything.
+fn build_throw_state(
+    speed: f32, dir_x: f32, dir_y: f32, dir_z: f32,
+    spin_rate: f32, nose_angle: f32, hyzer_angle: f32,
+    _release_height: f32, off_axis: f32, is_forehand: bool,
+    pos_x: f32, pos_y: f32, pos_z: f32,
+) -> DiscState {
+    let direction = Vec3::new(dir_x, dir_y, dir_z).normalize();
+    let yaw = (-direction.z).atan2(direction.x);
+    let mut orientation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
+    let horizontal_mag = (direction.x * direction.x + direction.z * direction.z).sqrt();
+    let vel_pitch = direction.y.atan2(horizontal_mag);
+    let pitch_axis = orientation.rotate_vec(Vec3::new(0.0, 0.0, 1.0));
+    orientation = Quat::from_axis_angle(pitch_axis, vel_pitch + nose_angle) * orientation;
+    let roll_axis = orientation.rotate_vec(Vec3::new(1.0, 0.0, 0.0));
+    orientation = Quat::from_axis_angle(roll_axis, hyzer_angle) * orientation;
+    let spin_y = if is_forehand { -spin_rate } else { spin_rate };
+    DiscState {
+        position: Vec3::new(pos_x, pos_y, pos_z),
+        velocity: direction * speed,
+        orientation,
+        spin: Vec3::new(off_axis, spin_y, 0.0),
+        grounded: false,
+    }
+}
+
 #[wasm_bindgen]
 pub struct DiscSimulator {
     state: DiscState,
@@ -42,37 +68,46 @@ impl DiscSimulator {
         off_axis: f32,
         is_forehand: bool,
     ) {
-        let direction = Vec3::new(dir_x, dir_y, dir_z).normalize();
+        self.state = build_throw_state(
+            speed, dir_x, dir_y, dir_z,
+            spin_rate, nose_angle, hyzer_angle,
+            release_height, off_axis, is_forehand,
+            0.0, release_height, 0.0,
+        );
+    }
 
-        // Build orientation from throw direction + hyzer + nose angles
-        // Disc body +X is "forward". R_y(yaw) maps (1,0,0) to (cos(yaw), 0, -sin(yaw)).
-        // To align +X_body with horizontal throw direction (dir_x, 0, dir_z):
-        //   cos(yaw) = dir_x/h, -sin(yaw) = dir_z/h  =>  yaw = atan2(-dir_z, dir_x)
-        let horizontal_dir_x = direction.x;
-        let horizontal_dir_z = direction.z;
-        let yaw = (-horizontal_dir_z).atan2(horizontal_dir_x);
-        let mut orientation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
-
-        // Pitch to align disc with velocity direction, then add nose angle on top
-        let horizontal_mag = (direction.x * direction.x + direction.z * direction.z).sqrt();
-        let vel_pitch = direction.y.atan2(horizontal_mag);
-        let pitch_axis = orientation.rotate_vec(Vec3::new(0.0, 0.0, 1.0));
-        orientation = Quat::from_axis_angle(pitch_axis, vel_pitch + nose_angle) * orientation;
-
-        // Apply hyzer/anhyzer (roll)
-        let roll_axis = orientation.rotate_vec(Vec3::new(1.0, 0.0, 0.0));
-        orientation = Quat::from_axis_angle(roll_axis, hyzer_angle) * orientation;
-
-        // Spin: forehand = negative spin.y, backhand = positive spin.y
-        let spin_y = if is_forehand { -spin_rate } else { spin_rate };
-
-        self.state = DiscState {
-            position: Vec3::new(0.0, release_height, 0.0),
-            velocity: direction * speed,
-            orientation,
-            spin: Vec3::new(off_axis, spin_y, 0.0),
-            grounded: false,
-        };
+    /// Predict trajectory for a hypothetical throw without modifying simulator state.
+    /// Returns flat [x,y,z, x,y,z, ...] array of positions.
+    pub fn predict_throw(
+        &self,
+        speed: f32, dir_x: f32, dir_y: f32, dir_z: f32,
+        spin_rate: f32, nose_angle: f32, hyzer_angle: f32,
+        release_height: f32, off_axis: f32, is_forehand: bool,
+        pos_x: f32, pos_y: f32, pos_z: f32,
+        duration: f32, steps: u32,
+    ) -> Vec<f32> {
+        let mut state = build_throw_state(
+            speed, dir_x, dir_y, dir_z,
+            spin_rate, nose_angle, hyzer_angle,
+            release_height, off_axis, is_forehand,
+            pos_x, pos_y, pos_z,
+        );
+        let dt = duration / steps as f32;
+        let mut result = Vec::with_capacity((steps as usize) * 3);
+        for _ in 0..steps {
+            let w = self.wind.sample(state.position);
+            integration::step(&mut state, dt, &self.profile, w);
+            if state.grounded {
+                result.push(state.position.x);
+                result.push(state.position.y);
+                result.push(state.position.z);
+                break;
+            }
+            result.push(state.position.x);
+            result.push(state.position.y);
+            result.push(state.position.z);
+        }
+        result
     }
 
     pub fn set_position(&mut self, x: f32, y: f32, z: f32) {

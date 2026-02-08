@@ -227,9 +227,12 @@ export class CrowdAudio {
      * Update momentum smoothly over time
      */
     update(dt: number): void {
+        if (!isFinite(dt)) return;
+
         // Smooth momentum interpolation
         const lerpSpeed = 2.0;
         this.momentum += (this.targetMomentum - this.momentum) * lerpSpeed * dt;
+        if (!isFinite(this.momentum)) this.momentum = 0;
 
         // Update ambience based on momentum
         if (this.ambienceGain && this.ambienceFilter) {

@@ -17,6 +17,7 @@ import {
     type GameplayInputSource,
     type InputViewport,
 } from './InputManager';
+import type { MenuState } from './ui/Menus';
 import { Disc } from './entities/Disc';
 import { Team } from './entities/Team';
 import type { Player } from './entities/Player';
@@ -293,13 +294,145 @@ async function main() {
     const spiritSystem = new SpiritSystem();
 
     // Menu system
+    // ── Hash Router ──
+
+    function parseHash(): { path: string; query: URLSearchParams } {
+        const raw = window.location.hash.slice(1) || '/title';
+        const qIdx = raw.indexOf('?');
+        const path = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+        const qs = qIdx >= 0 ? raw.slice(qIdx + 1) : '';
+        return { path: path || '/title', query: new URLSearchParams(qs) };
+    }
+
+    let routeInProgress = false;
+
+    function navigate(path: string, params?: Record<string, string>): void {
+        const q = params && Object.keys(params).length
+            ? '?' + new URLSearchParams(params).toString() : '';
+        history.pushState(null, '', '#' + path + q);
+        applyRoute();
+    }
+
+    function setHash(path: string, params?: Record<string, string>): void {
+        const q = params && Object.keys(params).length
+            ? '?' + new URLSearchParams(params).toString() : '';
+        history.replaceState(null, '', '#' + path + q);
+    }
+
+    function configFromQuery(q: URLSearchParams): QuickMatchConfig {
+        return {
+            color: q.get('color') || 'blue',
+            difficulty: q.get('difficulty') || 'normal',
+            gameTo: parseInt(q.get('gameTo') || '11') || 11,
+            multiplayerMode: (q.get('multiplayer') as MultiplayerMode) || 'single',
+            timeOfDay: q.get('time') || undefined,
+            weather: q.get('weather') || undefined,
+            randomSeed: q.has('seed') ? parseInt(q.get('seed')!) : undefined,
+            lanServerUrl: q.get('relay') || undefined,
+            lanRoom: q.get('room') || undefined,
+        };
+    }
+
+    const MENU_ROUTE_MAP: Record<string, MenuState> = {
+        '/title': 'title',
+        '/': 'title',
+        '/setup': 'match_setup',
+        '/career': 'career_menu',
+        '/practice': 'practice_menu',
+        '/locker': 'locker',
+        '/settings': 'settings',
+        '/credits': 'credits',
+    };
+
+    function applyRoute(): void {
+        if (routeInProgress) return;
+        routeInProgress = true;
+        try {
+            const { path, query } = parseHash();
+
+            // Menu routes
+            const menuState = MENU_ROUTE_MAP[path];
+            if (menuState) {
+                if (currentMode !== 'menu') stopGame();
+                menuSystem.setState(menuState);
+                if (menuState === 'match_setup') {
+                    menuSystem.setMatchSetupDefaults(configFromQuery(query));
+                }
+                return;
+            }
+
+            // Game routes
+            switch (path) {
+                case '/play': {
+                    const config = configFromQuery(query);
+                    currentMode = 'quick_match';
+                    startGame(config);
+                    break;
+                }
+                case '/watch': {
+                    const config = configFromQuery(query);
+                    config.spectatorMode = true;
+                    config.multiplayerMode = 'single';
+                    currentMode = 'spectator_match';
+                    startGame(config);
+                    break;
+                }
+                case '/tutorial':
+                    currentMode = 'quick_match';
+                    startGame(
+                        { color: 'blue', difficulty: 'easy', gameTo: 3, multiplayerMode: 'single' },
+                        true,
+                    );
+                    break;
+                case '/drill': {
+                    const drillType = query.get('type') || 'throwing_accuracy';
+                    currentMode = 'practice';
+                    window.dispatchEvent(
+                        new CustomEvent('startPracticeDrill', {
+                            detail: { drillType },
+                        }),
+                    );
+                    break;
+                }
+                case '/join': {
+                    const relay = query.get('relay') || DEFAULT_LAN_RELAY_URL;
+                    const room = query.get('room') || 'fqd-room-1';
+                    const mode = query.get('mode') || 'spectator';
+                    const config: QuickMatchConfig = {
+                        color: 'blue',
+                        difficulty: 'normal',
+                        gameTo: 11,
+                        multiplayerMode:
+                            mode === 'spectator' ? 'lan_spectator' : 'lan_remote',
+                        lanServerUrl: relay,
+                        lanRoom: room,
+                    };
+                    currentMode =
+                        mode === 'spectator' ? 'spectator_match' : 'quick_match';
+                    startGame(config);
+                    break;
+                }
+                default:
+                    if (currentMode !== 'menu') stopGame();
+                    menuSystem.setState('title');
+                    break;
+            }
+        } finally {
+            routeInProgress = false;
+        }
+    }
+
+    window.addEventListener('popstate', () => applyRoute());
+
+    // ── Menu System ──
+
     const menuSystem = new MenuSystem(menuContainer, (state) => {
         if (state === 'none') {
             menuSystem.hide();
         } else {
             menuSystem.show();
         }
-    });
+    }, navigate);
 
     // Lobby Browser Client
     let browserClient: LanRelayClient | null = null;
@@ -320,6 +453,8 @@ async function main() {
             }
         }, 5000);
     };
+    // Apply initial route (may navigate to a menu screen or start a game)
+    applyRoute();
     if (menuSystem.getState() === 'title') initBrowser();
 
     window.addEventListener('refreshLobby', () => {
@@ -327,22 +462,15 @@ async function main() {
     });
 
     window.addEventListener('joinLobbyRoom', ((e: CustomEvent) => {
-        currentMode = 'quick_match';
-        startGame({ 
-            color: 'blue', 
-            difficulty: 'normal', 
-            gameTo: 11, 
-            multiplayerMode: 'lan_spectator', 
-            lanRoom: e.detail.room 
-        });
+        navigate('/join', { room: e.detail.room, mode: 'spectator' });
     }) as EventListener);
 
-    // Event listeners for menu actions
+    // Event listeners for menu actions (fallbacks — menus now use navigate() directly)
     window.addEventListener('startPractice', () => {
         currentMode = 'practice';
         startGame();
     });
-    
+
     window.addEventListener('startQuickMatch', ((e: CustomEvent) => {
         currentMode = 'quick_match';
         startGame(e.detail);
@@ -352,7 +480,7 @@ async function main() {
         currentMode = 'spectator_match';
         startGame(e.detail);
     }) as EventListener);
-    
+
     window.addEventListener('startCareerMatch', () => {
         currentMode = 'career_match';
         careerManager = CareerManager.load();
@@ -375,7 +503,7 @@ async function main() {
             menuSystem.show();
             menuSystem.showPauseMenu(
                 () => { isPaused = false; menuSystem.hide(); },
-                () => { stopGame(); menuSystem.setState('title'); }
+                () => { stopGame(); navigate('/title'); }
             );
         } else {
             menuSystem.hide();
@@ -396,6 +524,7 @@ async function main() {
         gameInstance = null;
         currentMode = 'menu';
         isPaused = false;
+        setHash('/title');
     }
 
     function startGame(matchConfig?: QuickMatchConfig, tutorialMode?: boolean): void {
@@ -419,6 +548,31 @@ async function main() {
         }
 
         menuSystem.hide();
+
+        // Sync hash to reflect current game
+        if (currentMode === 'spectator_match') {
+            setHash('/watch', matchConfig ? {
+                difficulty: matchConfig.difficulty,
+                gameTo: String(matchConfig.gameTo),
+                ...(matchConfig.weather ? { weather: matchConfig.weather } : {}),
+                ...(matchConfig.timeOfDay ? { time: matchConfig.timeOfDay } : {}),
+            } : {});
+        } else if (currentMode === 'quick_match' && matchConfig) {
+            const p: Record<string, string> = {
+                color: matchConfig.color,
+                difficulty: matchConfig.difficulty,
+                gameTo: String(matchConfig.gameTo),
+            };
+            if (matchConfig.multiplayerMode !== 'single') p.multiplayer = matchConfig.multiplayerMode;
+            if (matchConfig.timeOfDay) p.time = matchConfig.timeOfDay;
+            if (matchConfig.weather) p.weather = matchConfig.weather;
+            if (matchConfig.lanServerUrl) p.relay = matchConfig.lanServerUrl;
+            if (matchConfig.lanRoom) p.room = matchConfig.lanRoom;
+            setHash('/play', p);
+        } else if (currentMode === 'career_match') {
+            setHash('/career');
+        }
+
         const multiplayerMode: MultiplayerMode =
             currentMode === 'quick_match'
                 ? matchConfig?.multiplayerMode ?? 'single'
@@ -701,6 +855,16 @@ async function main() {
             lanSpectatorMode ||
             (multiplayerMode === 'single' && !isSpectator);
         const lanStatusBadge = shouldConnectLAN ? createLanStatusBadge() : null;
+
+        // Spectator Interpolation
+        const stateBuffer: FullMatchState[] = [];
+        let remoteRenderTime = 0;
+        const INTERPOLATION_DELAY = 100; // ms
+        const _s0Pos = new THREE.Vector3();
+        const _s1Pos = new THREE.Vector3();
+        const _s0Vel = new THREE.Vector3();
+        const _s1Vel = new THREE.Vector3();
+
         const lanRoom =
             matchConfig?.lanRoom ||
             (multiplayerMode === 'single'
@@ -713,7 +877,7 @@ async function main() {
                   room: lanRoom,
                   role: lanSpectatorMode ? 'spectator' : 'host',
                   onControllerState: (id, state) => {
-                      if (lanSpectatorMode || multiplayerMode === 'single') return;
+                      if (lanSpectatorMode) return;
                       let proxy = networkProxies.get(id);
                       if (!proxy && controllerSlots.length < 14) {
                           proxy = new NetworkInputProxy();
@@ -746,38 +910,17 @@ async function main() {
                   onBroadcastState: (remoteState) => {
                       if (!lanSpectatorMode) return;
                       
-                      // Update Match State
-                      match.score = remoteState.score;
-                      match.point.stallCount = remoteState.stall;
-                      match.phase = remoteState.phase as any;
-                      match.offenseTeam = remoteState.offenseTeam as any;
-                      match.showStatusText(remoteState.statusText, remoteState.statusTextActive);
+                      // Buffer state for interpolation
+                      stateBuffer.push(remoteState);
                       
-                      // Sync randomness
-                      Random.seed(remoteState.randomSeed);
+                      // Keep buffer size reasonable
+                      if (stateBuffer.length > 20) {
+                          stateBuffer.shift();
+                      }
 
-                      // Update Disc
-                      disc.position.set(remoteState.disc.pos.x, remoteState.disc.pos.y, remoteState.disc.pos.z);
-                      disc.velocity.set(remoteState.disc.vel.x, remoteState.disc.vel.y, remoteState.disc.vel.z);
-                      disc.state = remoteState.disc.state as any;
-
-                      // Update Players
-                      for (const pState of remoteState.players) {
-                          const player = allPlayers.find(p => p.id === pState.id);
-                          if (player) {
-                              player.movement.position.set(pState.pos.x, 0, pState.pos.z);
-                              player.movement.facing = pState.facing;
-                              player.holdingDisc = pState.holding;
-                              player.setMarking(pState.marking, pState.markPct);
-                              player.stickman.setAccent(pState.accent);
-                              
-                              // Trigger animation sync
-                              player.stickman.updateFromJoints(
-                                  getPose(pState.anim, pState.animTime),
-                                  player.movement.position,
-                                  player.movement.facing
-                              );
-                          }
+                      // Initialize render time on first packet
+                      if (remoteRenderTime === 0) {
+                          remoteRenderTime = remoteState.timestamp - INTERPOLATION_DELAY;
                       }
                   },
                   onConnectionState: (connected, text) => {
@@ -1029,6 +1172,7 @@ async function main() {
             if (currentMode !== 'highlights_reel') return;
             audio.playScoreJingle();
             crowdAudio.reactToScore();
+            stadium.triggerCheer();
             postFX.triggerScoreEffect();
         });
 
@@ -1037,6 +1181,8 @@ async function main() {
             const d = data as DiscTurnoverEventData;
             if (d.reason === 'block') {
                 audio.playBlockSound();
+                crowdAudio.reactToBlock();
+                stadium.triggerCheer(0.5);
                 postFX.triggerBlockShake();
             }
             audio.stopDiscHum();
@@ -1661,7 +1807,9 @@ async function main() {
                 }
             }
 
-            const pausePressed = !isSpectator && controllerSlots.some(s => s.active && s.input.isPausePressed());
+            const pausePressed = isSpectator
+                ? keyJustPressed('Escape')
+                : controllerSlots.some(s => s.active && s.input.isPausePressed());
             if (pausePressed && !pauseLatch) {
                 togglePause();
             }
@@ -1729,16 +1877,102 @@ async function main() {
             const totalWindZ = baseWindZ + gust.dz;
             const effectiveWindSpeed = Math.sqrt(totalWindX * totalWindX + totalWindZ * totalWindZ);
             const effectiveWindDir = Math.atan2(totalWindX, totalWindZ);
-            discSim.set_base_wind(effectiveWindSpeed, effectiveWindDir);
-            discSim.update_wind(frameDt);
+            disc.bridge.setWind(effectiveWindSpeed, effectiveWindDir);
+            disc.bridge.updateWind(frameDt);
             fieldFlags.setWind(effectiveWindSpeed, effectiveWindDir);
             fieldFlags.update(frameDt);
-            stadium.update(frameDt);
             broadcast.update(frameDt);
 
             // Match state
             if (!lanSpectatorMode) {
                 match.update(frameDt, homeTeam, awayTeam, disc);
+            } else {
+                // Apply Interpolation
+                remoteRenderTime += rawDt * 1000; // Advance in real time (ms)
+                
+                // Drift correction: if we're too far behind or have no data ahead, snap
+                if (stateBuffer.length > 0) {
+                    const latestTime = stateBuffer[stateBuffer.length - 1].timestamp;
+                    const oldestTime = stateBuffer[0].timestamp;
+                    
+                    if (remoteRenderTime < oldestTime || remoteRenderTime > latestTime) {
+                        // Snap to 100ms behind latest
+                        remoteRenderTime = latestTime - INTERPOLATION_DELAY;
+                    }
+                }
+
+                // Find the two states to interpolate between
+                let s0: FullMatchState | null = null;
+                let s1: FullMatchState | null = null;
+                
+                for (let i = 0; i < stateBuffer.length - 1; i++) {
+                    if (stateBuffer[i].timestamp <= remoteRenderTime && stateBuffer[i+1].timestamp >= remoteRenderTime) {
+                        s0 = stateBuffer[i];
+                        s1 = stateBuffer[i+1];
+                        break;
+                    }
+                }
+                
+                if (s0 && s1) {
+                    const t = (remoteRenderTime - s0.timestamp) / (s1.timestamp - s0.timestamp);
+                    
+                    // Interpolate Match State (from s1 mostly for logic)
+                    match.score = s1.score;
+                    match.point.stallCount = s1.stall;
+                    match.phase = s1.phase as any;
+                    match.offenseTeam = s1.offenseTeam as any;
+                    match.showStatusText(s1.statusText, s1.statusTextActive);
+                    Random.seed(s1.randomSeed);
+
+                    // Interpolate Disc
+                    _s0Pos.set(s0.disc.pos.x, s0.disc.pos.y, s0.disc.pos.z);
+                    _s1Pos.set(s1.disc.pos.x, s1.disc.pos.y, s1.disc.pos.z);
+                    disc.position.lerpVectors(_s0Pos, _s1Pos, t);
+
+                    _s0Vel.set(s0.disc.vel.x, s0.disc.vel.y, s0.disc.vel.z);
+                    _s1Vel.set(s1.disc.vel.x, s1.disc.vel.y, s1.disc.vel.z);
+                    disc.velocity.lerpVectors(_s0Vel, _s1Vel, t);
+                    
+                    disc.state = s1.disc.state as any;
+
+                    // Interpolate Players
+                    for (const pState1 of s1.players) {
+                        const pState0 = s0.players.find(p => p.id === pState1.id);
+                        const player = allPlayers.find(p => p.id === pState1.id);
+                        if (player && pState0) {
+                            // Position
+                            player.movement.position.x = THREE.MathUtils.lerp(pState0.pos.x, pState1.pos.x, t);
+                            player.movement.position.z = THREE.MathUtils.lerp(pState0.pos.z, pState1.pos.z, t);
+                            
+                            // Facing (short-way angle lerp)
+                            let diff = pState1.facing - pState0.facing;
+                            while (diff > Math.PI) diff -= Math.PI * 2;
+                            while (diff < -Math.PI) diff += Math.PI * 2;
+                            player.movement.facing = pState0.facing + diff * t;
+
+                            player.holdingDisc = pState1.holding;
+                            player.setMarking(pState1.marking, pState1.markPct);
+                            player.stickman.setAccent(pState1.accent);
+                            
+                            // Sync animation - we can lerp the normalized pose time
+                            player.setRemotePose(pState1.anim, pState1.animTime);
+                        }
+                    }
+                } else if (stateBuffer.length > 0) {
+                    // Fallback: apply latest if we run out of buffer
+                    const latest = stateBuffer[stateBuffer.length - 1];
+                    match.score = latest.score;
+                    match.phase = latest.phase as any;
+                    disc.position.set(latest.disc.pos.x, latest.disc.pos.y, latest.disc.pos.z);
+                    for (const ps of latest.players) {
+                        const p = allPlayers.find(pl => pl.id === ps.id);
+                        if (p) {
+                            p.movement.position.set(ps.pos.x, 0, ps.pos.z);
+                            p.movement.facing = ps.facing;
+                            p.setRemotePose(ps.anim, ps.animTime);
+                        }
+                    }
+                }
             }
             hud.updatePhase(match.phase);
             hud.updateScore(match.score[0], match.score[1]);
@@ -1758,6 +1992,7 @@ async function main() {
             audio.updateCrowdExcitement(excitement);
             crowdAudio.setMomentum(excitement);
             crowdAudio.update(frameDt);
+            stadium.update(frameDt, excitement);
             musicSystem.setGameState({
                 phase: match.phase,
                 stallCount: match.point.stallCount,
@@ -1907,6 +2142,7 @@ async function main() {
                 if (broadcastStateTimer > 0.0166) { // 60Hz broadcast
                     broadcastStateTimer = 0;
                     lanClient.broadcastState({
+                        timestamp: performance.now(),
                         disc: {
                             pos: { x: disc.position.x, y: disc.position.y, z: disc.position.z },
                             vel: { x: disc.velocity.x, y: disc.velocity.y, z: disc.velocity.z },
@@ -1953,6 +2189,7 @@ async function main() {
                 if (snapshotTimer > 2.0) {
                     snapshotTimer = 0;
                     replayRecorder.recordSnapshot({
+                        timestamp: performance.now(),
                         disc: {
                             pos: { x: disc.position.x, y: disc.position.y, z: disc.position.z },
                             vel: { x: disc.velocity.x, y: disc.velocity.y, z: disc.velocity.z },
@@ -2011,6 +2248,7 @@ async function main() {
                 setTimeout(() => audio.playDiscSpike(), 300);
                 setTimeout(() => audio.playTeamCheer(), 500);
                 crowdAudio.reactToScore();
+                stadium.triggerCheer();
                 vocalSynth.announceScore();
                 homeAI.resetForPoint();
                 awayAI.resetForPoint();
@@ -2058,6 +2296,7 @@ async function main() {
             ) {
                 matchEnded = true;
                 crowdAudio.reactToScore();
+                stadium.triggerCheer(3.0);
                 vocalSynth.announceGameOver();
                 vocalSynth.blowWhistle('triple');
                 musicSystem.stop();
@@ -2506,6 +2745,9 @@ async function main() {
                         crowdAudio.reactToNearMiss();
                     } else {
                         disc.pickup(result.catcher);
+                        // Face catcher toward their attacking endzone
+                        const catcherEndzone = match.attackingEndzone[result.catcher.team];
+                        result.catcher.movement.facing = catcherEndzone === 0 ? Math.PI : 0;
                         replayRecorder.recordCatch(
                             result.catcher.id,
                             result.catcher.team,
@@ -2554,6 +2796,7 @@ async function main() {
                                 result.catcher.id,
                             );
                             crowdAudio.reactToBlock();
+                            stadium.triggerCheer(0.5);
                             if (thrownBy) {
                                 const turnoverThrower = lastThrowerByTeam[thrownBy];
                                 if (turnoverThrower) {

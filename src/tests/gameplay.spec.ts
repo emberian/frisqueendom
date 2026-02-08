@@ -572,8 +572,8 @@ describe('Match', () => {
             expect(match.score).toEqual([0, 0]);
         });
 
-        it('should have default gameTo of 11', () => {
-            expect(match.getGameTo()).toBe(11);
+        it('should have default gameTo of 15', () => {
+            expect(match.getGameTo()).toBe(15);
         });
 
         it('should start with away team on offense', () => {

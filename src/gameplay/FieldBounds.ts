@@ -29,10 +29,11 @@ export function isInEndzone(
 }
 
 export function getBrickMark(nearestEndzone: number): THREE.Vector3 {
+    // Brick mark is BRICK_MARK_DISTANCE from the goal line into the playing field
     const z =
         nearestEndzone === 0
-            ? BRICK_MARK_DISTANCE
-            : FIELD_LENGTH - BRICK_MARK_DISTANCE;
+            ? ENDZONE_DEPTH + BRICK_MARK_DISTANCE
+            : FIELD_LENGTH - ENDZONE_DEPTH - BRICK_MARK_DISTANCE;
     return new THREE.Vector3(0, 0, z);
 }
 

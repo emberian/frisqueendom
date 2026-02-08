@@ -20,6 +20,73 @@ const BONES: [number, number][] = [
     [11, 12], // R knee to R ankle
 ];
 
+// Shared static materials to minimize GPU overhead
+let SHARED_LIMB_MAT: THREE.MeshStandardMaterial | null = null;
+let SHARED_JOINT_MAT: THREE.MeshStandardMaterial | null = null;
+
+interface SharedMaterials {
+    limb: THREE.MeshStandardMaterial;
+    joint: THREE.MeshStandardMaterial;
+}
+
+function getSharedMaterials(): SharedMaterials {
+    if (!SHARED_LIMB_MAT || !SHARED_JOINT_MAT) {
+        SHARED_LIMB_MAT = new THREE.MeshStandardMaterial({ 
+            color: 0x111111,
+            roughness: 0.7,
+            metalness: 0.2
+        });
+        applyRimLighting(SHARED_LIMB_MAT, 0.3);
+
+        SHARED_JOINT_MAT = new THREE.MeshStandardMaterial({ 
+            color: 0x000000,
+            roughness: 0.5
+        });
+        applyRimLighting(SHARED_JOINT_MAT, 0.2);
+    }
+    return { limb: SHARED_LIMB_MAT, joint: SHARED_JOINT_MAT };
+}
+
+function applyRimLighting(mat: THREE.MeshStandardMaterial, intensity: number) {
+    mat.onBeforeCompile = (shader) => {
+        shader.uniforms.rimIntensity = { value: intensity };
+        // Rim color is now per-instance/mesh via userData if we wanted, 
+        // but for now we'll use a fixed white or team color uniform.
+        // To support different team colors on shared mats, we use a varying.
+        shader.vertexShader = `
+            varying vec3 vViewDir;
+            varying vec3 vNormalWorld;
+        ` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <beginnormal_vertex>',
+            `
+            #include <beginnormal_vertex>
+            vNormalWorld = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);
+            `
+        );
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `
+            #include <begin_vertex>
+            vViewDir = normalize(cameraPosition - (modelMatrix * vec4(position, 1.0)).xyz);
+            `
+        );
+        shader.fragmentShader = `
+            uniform float rimIntensity;
+            varying vec3 vViewDir;
+            varying vec3 vNormalWorld;
+        ` + shader.fragmentShader;
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <dithering_fragment>',
+            `
+            #include <dithering_fragment>
+            float fresnel = pow(1.0 - max(0.0, dot(normalize(vNormalWorld), normalize(vViewDir))), 3.0);
+            gl_FragColor.rgb += vec3(1.0) * fresnel * rimIntensity; // Default white rim
+            `
+        );
+    };
+}
+
 export class Stickman {
     group = new THREE.Group();
     private boneMeshes: THREE.Mesh[] = [];
@@ -36,67 +103,14 @@ export class Stickman {
     private static readonly JOINT_RADIUS = 0.045;
 
     constructor(teamColor: number) {
-        // Materials
-        const limbMat = new THREE.MeshStandardMaterial({ 
-            color: 0x111111,
-            roughness: 0.7,
-            metalness: 0.2
-        });
-        
-        const applyRimLighting = (mat: THREE.MeshStandardMaterial, rimColor: THREE.Color, intensity: number) => {
-            mat.onBeforeCompile = (shader) => {
-                shader.uniforms.rimColor = { value: rimColor };
-                shader.uniforms.rimIntensity = { value: intensity };
-                shader.vertexShader = `
-                    varying vec3 vViewDir;
-                    varying vec3 vNormalWorld;
-                ` + shader.vertexShader;
-                shader.vertexShader = shader.vertexShader.replace(
-                    '#include <beginnormal_vertex>',
-                    `
-                    #include <beginnormal_vertex>
-                    vNormalWorld = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);
-                    `
-                );
-                shader.vertexShader = shader.vertexShader.replace(
-                    '#include <begin_vertex>',
-                    `
-                    #include <begin_vertex>
-                    vViewDir = normalize(cameraPosition - (modelMatrix * vec4(position, 1.0)).xyz);
-                    `
-                );
-                shader.fragmentShader = `
-                    uniform vec3 rimColor;
-                    uniform float rimIntensity;
-                    varying vec3 vViewDir;
-                    varying vec3 vNormalWorld;
-                ` + shader.fragmentShader;
-                shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <dithering_fragment>',
-                    `
-                    #include <dithering_fragment>
-                    float fresnel = pow(1.0 - max(0.0, dot(normalize(vNormalWorld), normalize(vViewDir))), 3.0);
-                    gl_FragColor.rgb += rimColor * fresnel * rimIntensity;
-                    `
-                );
-            };
-        };
-
-        const teamTHREEColor = new THREE.Color(teamColor);
-        applyRimLighting(limbMat, teamTHREEColor, 0.3);
-
-        const jointMat = new THREE.MeshStandardMaterial({ 
-            color: 0x000000,
-            roughness: 0.5
-        });
-        applyRimLighting(jointMat, teamTHREEColor, 0.2);
+        const shared = getSharedMaterials();
 
         // Create volumetric bones (cylinders)
         const cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
         cylinderGeo.rotateX(Math.PI / 2); // Align with Z axis for easy 'lookAt'
 
         for (let i = 0; i < BONES.length; i++) {
-            const mesh = new THREE.Mesh(cylinderGeo, limbMat);
+            const mesh = new THREE.Mesh(cylinderGeo, shared.limb);
             mesh.castShadow = true;
             this.boneMeshes.push(mesh);
             this.group.add(mesh);
@@ -105,7 +119,7 @@ export class Stickman {
         // Create joint spheres
         const jointGeo = new THREE.SphereGeometry(1, 8, 8);
         for (let i = 0; i < JOINT_COUNT; i++) {
-            const mesh = new THREE.Mesh(jointGeo, jointMat);
+            const mesh = new THREE.Mesh(jointGeo, shared.joint);
             mesh.scale.setScalar(Stickman.JOINT_RADIUS);
             this.jointMeshes.push(mesh);
             this.group.add(mesh);
@@ -113,12 +127,13 @@ export class Stickman {
 
         // Head sphere
         const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
+        // Head can stay unique or share, but there's only 14, so standard mat is fine
         const headMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.3 });
         this.headMesh = new THREE.Mesh(headGeo, headMat);
         this.headMesh.castShadow = true;
         this.group.add(this.headMesh);
 
-        // Jersey (torso quad)
+        // Jersey (torso quad) - UNIQUE per player for team colors
         this.jerseyGeo = new THREE.BufferGeometry();
         const jerseyPositions = new Float32Array([
             0, 1.5, 0,   // neck
@@ -140,7 +155,7 @@ export class Stickman {
             emissive: teamColor,
             emissiveIntensity: 0.2
         });
-        applyRimLighting(jerseyMat, new THREE.Color(0xffffff), 0.4);
+        applyRimLighting(jerseyMat, 0.4);
         this.jerseyMesh = new THREE.Mesh(this.jerseyGeo, jerseyMat);
         this.jerseyMesh.castShadow = true;
         this.group.add(this.jerseyMesh);

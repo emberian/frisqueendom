@@ -49,6 +49,14 @@ export class PointFlow {
         // Reset stall on new catch
         if (disc.justCaught) {
             this.stallCount = 0;
+
+            // OOB catch: turnover if receiver's last ground contact was out of bounds
+            // (allows "greatest" plays — layout from in-bounds catching over OB)
+            if (holder && !holder.lastInBoundsGround) {
+                this.triggerTurnover('out_of_bounds');
+                return;
+            }
+
             if (holder && !offenseHasDisc) {
                 this.triggerTurnover('interception');
                 return;

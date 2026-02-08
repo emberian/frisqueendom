@@ -20,6 +20,7 @@ const _toMark = new THREE.Vector3();
 const _laneVec = new THREE.Vector3();
 const _toDef = new THREE.Vector3();
 const _closestLane = new THREE.Vector3();
+const _interceptPos = new THREE.Vector3();
 
 export interface AIAction {
     type: 'move' | 'throw' | 'none';
@@ -139,8 +140,8 @@ export function decideOffenseWithDisc(
         bestReceiver.movement.position,
     );
     const speed = Math.max(
-        11,
-        Math.min(33, 9 + dist * 0.78 + bestOpenness * 2.5 + bestScore * 1.8),
+        10,
+        Math.min(28, 8 + dist * 0.48 + bestOpenness * 0.6 + bestScore * 0.4),
     );
 
     const leadTarget = computeLeadPass(player, bestReceiver, speed);
@@ -150,9 +151,13 @@ export function decideOffenseWithDisc(
     const toReceiver = _temp2
         .copy(bestReceiver.movement.position)
         .sub(player.movement.position);
-    _facing.set(Math.sin(player.movement.facing), 0, Math.cos(player.movement.facing));
+    // Use attacking direction as facing reference for forehand/backhand,
+    // since the player should face roughly toward the endzone they attack.
+    _facing.set(0, 0, attackDir);
+    // cross = -(_facing × toReceiver).y, so cross < 0 means receiver
+    // is to the RIGHT of the facing direction (forehand side).
     const cross = _facing.x * toReceiver.z - _facing.z * toReceiver.x;
-    const isForehandSide = cross > 0;
+    const isForehandSide = cross < 0;
     throwType = isForehandSide ? 'forehand' : 'backhand';
 
     if (player.stats) {
@@ -344,4 +349,39 @@ export function moveToward(
     const canSprint = sprint && player.movement.stamina > 10;
     const dir = { x: _temp.x / dist, z: _temp.z / dist };
     player.movement.update(dt, dir, canSprint);
+}
+
+/**
+ * Find the earliest point on a ballistic disc trajectory that a player can
+ * reach in time while the disc is at catchable height.
+ * Uses simple JS extrapolation (velocity + gravity) to avoid WASM borrow issues.
+ */
+export function findBestIntercept(
+    player: Player,
+    discPos: THREE.Vector3,
+    discVel: THREE.Vector3,
+): THREE.Vector3 | null {
+    const sprintSpeed = player.movement.sprintSpeed;
+    const catchRadius = player.getCatchRadius();
+    const gravity = -9.81;
+    const steps = 30;
+    const timeStep = 0.1; // 3 seconds total
+
+    for (let i = 0; i < steps; i++) {
+        const t = (i + 1) * timeStep;
+        const x = discPos.x + discVel.x * t;
+        const y = discPos.y + discVel.y * t + 0.5 * gravity * t * t;
+        const z = discPos.z + discVel.z * t;
+
+        // Disc must be at catchable height
+        if (y < 0.3 || y > 3.0) continue;
+
+        const dx = player.movement.position.x - x;
+        const dz = player.movement.position.z - z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist <= sprintSpeed * t + catchRadius) {
+            return _interceptPos.set(x, 0, z);
+        }
+    }
+    return null;
 }

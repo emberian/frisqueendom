@@ -16,24 +16,34 @@
             --muted: #8298b0;
             --accent: #ffd166;
             --accent-glow: rgba(255, 209, 102, 0.3);
-            --safe-area-bottom: env(safe-area-inset-bottom, 16px);
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 16px);
+            --safe-left: env(safe-area-inset-left, 0px);
+            --safe-right: env(safe-area-inset-right, 0px);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Rajdhani', sans-serif;
+        }
         body {
-            min-height: 100vh;
-            background: 
+            background:
                 radial-gradient(circle at 0% 0%, rgba(51, 214, 255, 0.12) 0%, transparent 40%),
                 radial-gradient(circle at 100% 100%, rgba(255, 77, 109, 0.1) 0%, transparent 40%),
                 var(--bg);
-            color: var(--text);
-            font-family: 'Rajdhani', sans-serif;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
             position: fixed;
             inset: 0;
         }
 
+        /* ── Connect Screen ── */
+        #connect-screen {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
         .header {
             padding: 12px 20px;
             display: flex;
@@ -66,7 +76,7 @@
             gap: 10px;
             background: rgba(0, 0, 0, 0.2);
         }
-        input {
+        .connection-panel input {
             flex: 1;
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--line);
@@ -82,6 +92,7 @@
             border: 1px solid rgba(255, 209, 102, 0.4);
             background: linear-gradient(150deg, rgba(255, 122, 34, 0.9), rgba(255, 77, 109, 0.9));
             color: white;
+            font-family: inherit;
             font-weight: 700;
             text-transform: uppercase;
             font-size: 0.85rem;
@@ -89,191 +100,446 @@
             cursor: pointer;
         }
 
-        .main-controls {
-            flex: 1;
+        #browser-panel {
+            padding: 0 20px 20px;
             display: flex;
-            padding: 20px;
-            gap: 20px;
-            align-items: center;
-            justify-content: space-between;
+            flex-direction: column;
+            gap: 10px;
         }
-
-        .stick-container {
-            width: 160px;
-            height: 160px;
-            border-radius: 50%;
-            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.05), transparent);
-            border: 2px solid var(--line);
-            position: relative;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.4), inset 0 4px 10px rgba(0,0,0,0.3);
-            backdrop-filter: blur(4px);
-            touch-action: none;
-        }
-        .stick-container h2 {
-            position: absolute;
-            top: -24px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.75rem;
-            text-transform: uppercase;
+        #browser-panel h2 {
+            font-size: 0.8rem;
             color: var(--muted);
             letter-spacing: 0.1em;
+            text-transform: uppercase;
         }
-        #move-knob, #aim-reticle {
+        #room-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* ── Rotate Prompt (portrait) ── */
+        #rotate-prompt {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            z-index: 1000;
+            color: var(--muted);
+            font-size: 1.1rem;
+            letter-spacing: 0.05em;
+        }
+        #rotate-prompt svg {
             width: 64px;
             height: 64px;
-            border-radius: 50%;
+            opacity: 0.5;
+            animation: rotate-hint 2s ease-in-out infinite;
+        }
+        @keyframes rotate-hint {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(90deg); }
+        }
+
+        /* ── Game Screen ── */
+        #game-screen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+        }
+
+        /* HUD Bar */
+        #hud-bar {
             position: absolute;
+            top: var(--safe-top);
             left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
-            border: 1px solid rgba(255,255,255,0.3);
-        }
-        #move-knob {
-            background: linear-gradient(135deg, #ffd166, #ff7a22);
-            box-shadow: 0 0 15px var(--accent-glow);
-        }
-        #aim-reticle {
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(135deg, #33d6ff, #6084ff);
-            box-shadow: 0 0 15px rgba(51, 214, 255, 0.3);
-        }
-
-        .action-grid {
-            flex: 1;
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
             gap: 10px;
-            max-width: 500px;
+            padding: 5px 16px;
+            background: rgba(7, 16, 30, 0.86);
+            border-radius: 0 0 12px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-top: none;
+            backdrop-filter: blur(6px);
+            z-index: 20;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        #hud-home-score { color: #8fdcff; }
+        #hud-away-score { color: #ffd7a0; }
+        #hud-stall-wrap {
+            width: 100px;
+            height: 8px;
+            background: rgba(0, 0, 0, 0.45);
+            border-radius: 999px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        #hud-stall-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 999px;
+            background: #38d67a;
+            transition: width 0.1s linear, background 0.15s;
+        }
+        #hud-phase {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+        #hud-latency {
+            font-size: 12px;
+            line-height: 1;
         }
 
-        .btn {
-            aspect-ratio: 1;
-            border-radius: 16px;
+        /* Status Overlay */
+        #status-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: clamp(28px, 6vw, 48px);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: white;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), 0 0 40px rgba(255, 209, 102, 0.3);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+            z-index: 15;
+        }
+        #status-overlay.visible { opacity: 1; }
+
+        /* Touch Zones */
+        #move-zone, #aim-zone {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            touch-action: none;
+            z-index: 1;
+        }
+        #move-zone { left: 0; width: 48%; }
+        #aim-zone { right: 0; width: 48%; }
+
+        /* Floating Sticks */
+        .float-stick {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 2;
+        }
+        .stick-base {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.03);
+            transform: translate(-50%, -50%);
+        }
+        .stick-knob {
+            position: absolute;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+        }
+        .stick-knob.move {
+            background: linear-gradient(135deg, #ffd166, #ff7a22);
+            box-shadow: 0 0 12px var(--accent-glow), 0 6px 16px rgba(0, 0, 0, 0.5);
+        }
+        .stick-knob.aim {
+            background: linear-gradient(135deg, #33d6ff, #6084ff);
+            box-shadow: 0 0 12px rgba(51, 214, 255, 0.25), 0 6px 16px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Button Trays */
+        #btn-tray-left {
+            position: absolute;
+            bottom: calc(var(--safe-bottom) + 12px);
+            left: calc(var(--safe-left) + 16px);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 10;
+        }
+        #btn-switch {
+            position: absolute;
+            bottom: calc(var(--safe-bottom) + 12px);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+        }
+        #btn-tray-right {
+            position: absolute;
+            bottom: calc(var(--safe-bottom) + 12px);
+            right: calc(var(--safe-right) + 16px);
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+            z-index: 10;
+        }
+        .throw-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Control Buttons */
+        .ctrl-btn {
+            border-radius: 14px;
             border: 1px solid var(--line);
             background: var(--panel);
             color: var(--text);
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-family: inherit;
-            font-weight: 600;
-            font-size: 0.75rem;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 13px;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.04em;
             cursor: pointer;
-            transition: all 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
-            backdrop-filter: blur(8px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            transition: all 0.12s ease;
+            backdrop-filter: blur(6px);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            min-width: 64px;
+            min-height: 48px;
+            padding: 0 16px;
         }
-        .btn:active, .btn.active {
-            transform: scale(0.92);
+        .ctrl-btn:active, .ctrl-btn.active {
+            transform: scale(0.93);
             border-color: var(--accent);
             background: rgba(255, 209, 102, 0.15);
-            box-shadow: 0 0 20px var(--accent-glow);
+            box-shadow: 0 0 16px var(--accent-glow);
         }
-        .btn.primary {
-            background: linear-gradient(150deg, rgba(255, 122, 34, 0.15), rgba(255, 77, 109, 0.15));
-            border-color: rgba(255, 122, 34, 0.4);
+        .throw-trigger {
+            min-width: 80px;
+            min-height: 52px;
+            font-size: 14px;
+            background: linear-gradient(150deg, rgba(255, 122, 34, 0.18), rgba(255, 77, 109, 0.18));
+            border-color: rgba(255, 122, 34, 0.35);
         }
-        .btn.primary:active, .btn.primary.active {
-            background: linear-gradient(150deg, rgba(255, 122, 34, 0.6), rgba(255, 77, 109, 0.6));
-            border-color: #ffd166;
+        .throw-trigger:active, .throw-trigger.active {
+            background: linear-gradient(150deg, rgba(255, 122, 34, 0.55), rgba(255, 77, 109, 0.55));
+            border-color: var(--accent);
         }
-        .btn.span-2 { grid-column: span 2; aspect-ratio: auto; min-height: 54px; }
 
-        .footer {
-            padding: 10px 20px calc(var(--safe-area-bottom) + 10px);
-            background: rgba(0, 0, 0, 0.4);
-            border-top: 1px solid var(--line);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.75rem;
+        /* Modifier Strip */
+        #modifier-strip {
+            display: none;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+        #modifier-strip.visible { display: flex; }
+        .mod-btn {
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.06);
             color: var(--muted);
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            cursor: pointer;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            min-width: 44px;
+            min-height: 36px;
+            padding: 0 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.12s ease;
+        }
+        .mod-btn:active, .mod-btn.active {
+            color: var(--text);
+            border-color: var(--accent);
+            background: rgba(255, 209, 102, 0.12);
         }
 
+        /* Reconnect Banner */
+        #reconnect-banner {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 24px;
+            background: rgba(255, 77, 109, 0.2);
+            border: 1px solid rgba(255, 77, 109, 0.4);
+            border-radius: 10px;
+            backdrop-filter: blur(8px);
+            z-index: 30;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #ffa0b0;
+            letter-spacing: 0.04em;
+            pointer-events: none;
+        }
+
+        /* Disconnect button (shown in game screen) */
+        #btn-disconnect {
+            position: absolute;
+            top: calc(var(--safe-top) + 6px);
+            right: calc(var(--safe-right) + 12px);
+            z-index: 20;
+            padding: 4px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 77, 109, 0.3);
+            background: rgba(255, 77, 109, 0.1);
+            color: #ffa0b0;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            cursor: pointer;
+        }
+
+        /* ── Portrait media query ── */
         @media (orientation: portrait) {
-            .main-controls {
-                flex-direction: column;
-                justify-content: center;
-                gap: 40px;
-            }
-            .action-grid {
-                width: 100%;
-                max-width: 320px;
-            }
-            .stick-container {
-                width: 180px;
-                height: 180px;
-            }
+            #game-screen { display: none !important; }
+            #rotate-prompt.active { display: flex !important; }
+        }
+        @media (orientation: landscape) {
+            #rotate-prompt { display: none !important; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>FrisQueendom</h1>
-        <div id="status">Ready</div>
-    </div>
+    <!-- Connect Screen -->
+    <div id="connect-screen">
+        <div class="header">
+            <h1>FrisQueendom</h1>
+            <div id="status">Ready</div>
+        </div>
 
-    <div class="connection-panel">
-        <div style="display:flex; flex-direction:column; gap:8px; flex:1;">
-            <input id="relay-url" type="text" placeholder="Relay URL" />
-            <div style="display:flex; gap:8px;">
-                <input id="room" type="text" placeholder="Room Code" style="flex:2;" />
-                <input id="accent-color" type="color" value="#ffd166" style="flex:1; padding:0; height:42px; min-width:60px; border:none; background:transparent; cursor:pointer;" title="Player Accent Color" />
+        <div class="connection-panel">
+            <div style="display:flex; flex-direction:column; gap:8px; flex:1;">
+                <input id="relay-url" type="text" placeholder="Relay URL" />
+                <div style="display:flex; gap:8px;">
+                    <input id="room" type="text" placeholder="Room Code" style="flex:2;" />
+                    <input id="accent-color" type="color" value="#ffd166" style="flex:0 0 50px; padding:2px; height:42px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,0.05); cursor:pointer;" title="Player Color" />
+                </div>
+            </div>
+            <button id="connect" style="height:auto;">Connect</button>
+        </div>
+
+        <div id="browser-panel">
+            <h2>Public Games</h2>
+            <div id="room-list">
+                <div style="font-size: 0.85rem; color: rgba(255,255,255,0.3); text-align: center; padding: 10px;">Searching for matches...</div>
             </div>
         </div>
-        <button id="connect" style="height:auto;">Connect</button>
     </div>
 
-    <div id="browser-panel" style="padding: 0 20px 20px; display: flex; flex-direction: column; gap: 10px;">
-        <h2 style="font-size: 0.8rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase;">Public Games</h2>
-        <div id="room-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 160px; overflow-y: auto;">
-            <div style="font-size: 0.85rem; color: rgba(255,255,255,0.3); text-align: center; padding: 10px;">Searching for matches...</div>
-        </div>
+    <!-- Rotate Prompt -->
+    <div id="rotate-prompt">
+        <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="12" y="4" width="40" height="56" rx="6" />
+            <path d="M32 50h.01" />
+            <path d="M50 36 l8 0 l0 -8" />
+            <path d="M58 36 C58 20, 44 12, 32 12" />
+        </svg>
+        <p>Rotate to landscape</p>
     </div>
 
-    <div class="main-controls">
-        <div id="move-pad" class="stick-container">
-            <h2>Move</h2>
-            <div id="move-knob"></div>
+    <!-- Game Screen -->
+    <div id="game-screen">
+        <!-- HUD Bar -->
+        <div id="hud-bar">
+            <span id="hud-home-score">0</span>
+            <span style="color:var(--muted); font-size:11px;">&ndash;</span>
+            <div id="hud-stall-wrap">
+                <div id="hud-stall-fill"></div>
+            </div>
+            <span style="color:var(--muted); font-size:11px;">&ndash;</span>
+            <span id="hud-away-score">0</span>
+            <span id="hud-phase">PRE PULL</span>
+            <span id="hud-latency"></span>
         </div>
 
-        <div class="action-grid">
-            <button class="btn primary span-2" data-hold="true" data-action="throw">Throw</button>
-            <button class="btn primary span-2" data-hold="true" data-action="forehand">Forehand</button>
-            
-            <button class="btn" data-hold="true" data-action="sprint">Sprint</button>
-            <button class="btn" data-hold="true" data-action="jump">Jump</button>
-            <button class="btn" data-tap="true" data-action="switch">Switch</button>
-            <button class="btn" data-hold="true" data-action="hammer">Hammer</button>
-            
-            <button class="btn" data-hold="true" data-action="blade">Blade</button>
-            <button class="btn" data-hold="true" data-action="thumber">Thumber</button>
-            <button class="btn" data-hold="true" data-action="high">High</button>
-            <button class="btn" data-hold="true" data-action="low">Low</button>
-            
-            <button class="btn span-2" data-hold="true" data-action="curveLeft">Curve -</button>
-            <button class="btn span-2" data-hold="true" data-action="curveRight">Curve +</button>
+        <!-- Status Overlay -->
+        <div id="status-overlay"></div>
+
+        <!-- Move Touch Zone (left) -->
+        <div id="move-zone">
+            <div id="move-stick" class="float-stick">
+                <div class="stick-base"></div>
+                <div class="stick-knob move"></div>
+            </div>
         </div>
 
-        <div id="aim-pad" class="stick-container">
-            <h2>Aim</h2>
-            <div id="aim-reticle"></div>
+        <!-- Aim Touch Zone (right) -->
+        <div id="aim-zone">
+            <div id="aim-stick" class="float-stick">
+                <div class="stick-base"></div>
+                <div class="stick-knob aim"></div>
+            </div>
         </div>
-    </div>
 
-    <div class="footer">
-        <span>v0.1.0 Companion</span>
-        <span>LAN Relay Mode</span>
+        <!-- Left Buttons: Jump + Sprint -->
+        <div id="btn-tray-left">
+            <button class="ctrl-btn" id="btn-jump">Jump</button>
+            <button class="ctrl-btn" id="btn-sprint">Sprint</button>
+        </div>
+
+        <!-- Center: Switch -->
+        <button class="ctrl-btn" id="btn-switch">Switch</button>
+
+        <!-- Right Buttons: Throws + Modifiers -->
+        <div id="btn-tray-right">
+            <div id="modifier-strip">
+                <button class="mod-btn" data-action="hammer">Ham</button>
+                <button class="mod-btn" data-action="blade">Bld</button>
+                <button class="mod-btn" data-action="thumber">Thb</button>
+                <button class="mod-btn" data-action="high">Hi</button>
+                <button class="mod-btn" data-action="low">Lo</button>
+                <button class="mod-btn" data-action="curveLeft">C-</button>
+                <button class="mod-btn" data-action="curveRight">C+</button>
+            </div>
+            <div class="throw-row">
+                <button class="ctrl-btn throw-trigger" id="btn-backhand">BH</button>
+                <button class="ctrl-btn throw-trigger" id="btn-forehand">FH</button>
+            </div>
+        </div>
+
+        <!-- Reconnect Banner -->
+        <div id="reconnect-banner">
+            <span id="reconnect-text">Reconnecting...</span>
+        </div>
+
+        <!-- Disconnect -->
+        <button id="btn-disconnect">Disconnect</button>
     </div>
 
     <script type="module" src="/src/controller.ts"></script>
 </body>
 </html>
-

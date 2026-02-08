@@ -25,6 +25,7 @@ import { STAT_MODIFIERS, ANIMATION_TIMINGS } from '../data/GameplayConstants';
 import type { TeamSide, PlayerRole } from '../data/Types';
 import type { PlayerStats } from '../data/PlayerStats';
 import { Random } from '../data/SeededRandom';
+import { isInBounds } from '../gameplay/FieldBounds';
 
 // Reuse vectors to minimize GC
 const _tempVec = new THREE.Vector3();
@@ -66,6 +67,10 @@ export class Player {
     // Marking state
     isMarking = false;
     markStallIntensity = 0;
+
+    // Greatest play: true if player's last ground contact was in-bounds
+    // Frozen during layout so a dive from in-bounds over OB is still a valid catch
+    lastInBoundsGround = true;
 
     constructor(
         team: TeamSide,
@@ -193,6 +198,7 @@ export class Player {
     ): void {
         // Handle layout animation
         if (this.animState === 'layout' && this.layoutTarget) {
+            // During layout, lastInBoundsGround is FROZEN — enables "greatest" plays
             this.layoutProgress += dt * 2; // Layout takes 0.5 seconds
             if (this.layoutProgress >= 1) {
                 this.animState = 'idle';
@@ -216,6 +222,11 @@ export class Player {
             } else {
                 this.movement.update(dt, input.movementDir, input.sprint);
             }
+        }
+
+        // Track in-bounds ground contact (NOT updated during layout — enables greatest plays)
+        if (this.animState !== 'layout') {
+            this.lastInBoundsGround = isInBounds(this.movement.position);
         }
 
         // Animation state machine

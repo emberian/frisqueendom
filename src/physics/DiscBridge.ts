@@ -1,9 +1,12 @@
 import * as THREE from 'three';
-import type { DiscSimulator } from '../../frisque-physics/pkg/frisque_physics.js';
+import { DiscSimulator } from '../../frisque-physics/pkg/frisque_physics.js';
 import { ThrowParams } from '../data/Types';
 
 export class DiscBridge {
     private sim: DiscSimulator;
+    private predSim: DiscSimulator | null = null;
+    private lastWindSpeed = 0;
+    private lastWindDir = 0;
 
     constructor(sim: DiscSimulator) {
         this.sim = sim;
@@ -50,7 +53,13 @@ export class DiscBridge {
     }
 
     setWind(speed: number, direction: number): void {
+        this.lastWindSpeed = speed;
+        this.lastWindDir = direction;
         this.sim.set_base_wind(speed, direction);
+    }
+
+    updateWind(dt: number): void {
+        this.sim.update_wind(dt);
     }
 
     getWindAt(pos: THREE.Vector3): THREE.Vector3 {
@@ -63,6 +72,28 @@ export class DiscBridge {
 
     predict(duration: number, steps: number): Float32Array {
         const arr = this.sim.predict(duration, steps);
+        return new Float32Array(arr);
+    }
+
+    /**
+     * Predict trajectory for a hypothetical throw using a separate simulator
+     * to avoid wasm-bindgen RefCell borrow conflicts with the main sim.
+     */
+    predictThrow(params: ThrowParams, duration: number, steps: number): Float32Array {
+        if (!this.predSim) {
+            this.predSim = new DiscSimulator();
+        }
+        // Sync wind to prediction sim
+        this.predSim.set_base_wind(this.lastWindSpeed, this.lastWindDir);
+
+        const arr = this.predSim.predict_throw(
+            params.speed,
+            params.direction.x, params.direction.y, params.direction.z,
+            params.spinRate, params.noseAngle, params.hyzerAngle,
+            params.releaseHeight, params.offAxis, params.isForehand,
+            params.position.x, params.position.y, params.position.z,
+            duration, steps,
+        );
         return new Float32Array(arr);
     }
 }
