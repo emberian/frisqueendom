@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import {
+    FIELD_WIDTH,
+    FIELD_LENGTH,
     PLAYER_JOG_SPEED,
     PLAYER_SPRINT_SPEED,
     PLAYER_ACCELERATION,
@@ -9,6 +11,11 @@ import {
     STAMINA_JOG_REGEN,
     STAMINA_IDLE_REGEN,
 } from '../data/Constants';
+
+// Fence boundary (5m outside field edge, slightly inset for player radius)
+const FENCE_X = FIELD_WIDTH / 2 + 4.5;  // 23.0m (fence posts at 23.5, minus 0.5 buffer)
+const FENCE_Z_MIN = -4.5;               // fence at -5, plus 0.5 buffer
+const FENCE_Z_MAX = FIELD_LENGTH + 4.5; // fence at 105, minus 0.5 buffer
 
 function lerpAngle(a: number, b: number, t: number): number {
     let diff = b - a;
@@ -143,6 +150,12 @@ export class MovementController {
         // Integrate position
         this.position.x += this.velocity.x * dt;
         this.position.z += this.velocity.z * dt;
+
+        // Clamp to fence boundary
+        if (this.position.x < -FENCE_X) { this.position.x = -FENCE_X; this.velocity.x = 0; }
+        if (this.position.x > FENCE_X) { this.position.x = FENCE_X; this.velocity.x = 0; }
+        if (this.position.z < FENCE_Z_MIN) { this.position.z = FENCE_Z_MIN; this.velocity.z = 0; }
+        if (this.position.z > FENCE_Z_MAX) { this.position.z = FENCE_Z_MAX; this.velocity.z = 0; }
 
         // Stamina
         const finalSpeedSq = this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z;

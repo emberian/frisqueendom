@@ -1,7 +1,4 @@
 import * as THREE from 'three';
-import { Line2 } from 'three/addons/lines/Line2.js';
-import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { JOINT_COUNT } from './Animation';
 
 // Bone connections: pairs of joint indices
@@ -13,11 +10,59 @@ const BONES: [number, number][] = [
     [3, 4],   // L elbow to L wrist
     [5, 6],   // R shoulder to R elbow
     [6, 7],   // R elbow to R wrist
-    [1, 8],   // neck to waist (spine)
-    [8, 9],   // waist to L knee
+    [1, 13],  // neck to chest (upper spine)
+    [13, 8],  // chest to waist (lower spine)
+    [8, 14],  // waist to L hip
+    [14, 9],  // L hip to L knee
     [9, 10],  // L knee to L ankle
-    [8, 11],  // waist to R knee
+    [10, 16], // L ankle to L toe
+    [8, 15],  // waist to R hip
+    [15, 11], // R hip to R knee
     [11, 12], // R knee to R ankle
+    [12, 17], // R ankle to R toe
+];
+
+// Per-bone radii (mannequin proportions). -1 = hidden (inside torso/shoes).
+const BONE_RADII: number[] = [
+    0.045,  // [0,1]   head→neck
+    0.05,   // [1,2]   neck→L_shoulder (clavicle)
+    0.05,   // [1,5]   neck→R_shoulder (clavicle)
+    0.065,  // [2,3]   L_shoulder→L_elbow (upper arm)
+    0.055,  // [3,4]   L_elbow→L_wrist (forearm)
+    0.065,  // [5,6]   R_shoulder→R_elbow (upper arm)
+    0.055,  // [6,7]   R_elbow→R_wrist (forearm)
+    -1,     // [1,13]  neck→chest (hidden in torso)
+    -1,     // [13,8]  chest→waist (hidden in torso)
+    -1,     // [8,14]  waist→L_hip (hidden in torso)
+    0.08,   // [14,9]  L_hip→L_knee (thigh)
+    0.065,  // [9,10]  L_knee→L_ankle (shin)
+    -1,     // [10,16] L_ankle→L_toe (hidden in shoe)
+    -1,     // [8,15]  waist→R_hip (hidden in torso)
+    0.08,   // [15,11] R_hip→R_knee (thigh)
+    0.065,  // [11,12] R_knee→R_ankle (shin)
+    -1,     // [12,17] R_ankle→R_toe (hidden in shoe)
+];
+
+// Per-joint radii (ball joints). -1 = hidden (inside torso/shoes/head).
+const JOINT_RADII: number[] = [
+    -1,     // 0:  head (head sphere handles this)
+    0.055,  // 1:  neck
+    0.08,   // 2:  L_shoulder
+    0.065,  // 3:  L_elbow
+    0.05,   // 4:  L_wrist
+    0.08,   // 5:  R_shoulder
+    0.065,  // 6:  R_elbow
+    0.05,   // 7:  R_wrist
+    -1,     // 8:  waist (inside torso)
+    0.075,  // 9:  L_knee
+    0.06,   // 10: L_ankle
+    0.075,  // 11: R_knee
+    0.06,   // 12: R_ankle
+    -1,     // 13: chest (inside torso)
+    -1,     // 14: L_hip (inside torso)
+    -1,     // 15: R_hip (inside torso)
+    -1,     // 16: L_toe (inside shoe)
+    -1,     // 17: R_toe (inside shoe)
 ];
 
 // Shared static materials to minimize GPU overhead
@@ -105,10 +150,10 @@ export class Stickman {
     private boneMeshes: THREE.Mesh[] = [];
     private jointMeshes: THREE.Mesh[] = [];
     private headMesh: THREE.Mesh;
-    private jerseyMesh: THREE.Mesh;
-    private jerseyGeo: THREE.BufferGeometry;
-    private shortsMesh: THREE.Mesh;
-    private shortsGeo: THREE.BufferGeometry;
+    private torsoMesh: THREE.Mesh;
+    private pelvisMesh: THREE.Mesh;
+    private leftHandMesh: THREE.Mesh;
+    private rightHandMesh: THREE.Mesh;
     private leftShoeMesh: THREE.Mesh;
     private rightShoeMesh: THREE.Mesh;
     private accentMesh: THREE.Mesh | null = null;
@@ -149,35 +194,60 @@ export class Stickman {
     private leftShoeMat: THREE.MeshStandardMaterial;
     private rightShoeMat: THREE.MeshStandardMaterial;
 
-    private static readonly LIMB_RADIUS = 0.055;
-    private static readonly JOINT_RADIUS = 0.06;
-
-    constructor(teamColor: number) {
+    constructor(teamColor: number, secondaryColor?: number) {
         const shared = getSharedMaterials();
 
-        // Create volumetric bones (cylinders)
+        // Team-tinted materials for body parts (makes teams visually distinct)
+        const teamCol = new THREE.Color(teamColor);
+        const limbColor = new THREE.Color(0x222222).lerp(teamCol, 0.55);
+        const teamLimbMat = new THREE.MeshStandardMaterial({
+            color: limbColor,
+            roughness: 0.6,
+            metalness: 0.15,
+        });
+        applyRimLighting(teamLimbMat, 0.5);
+
+        const jointColor = new THREE.Color(0x1a1a1a).lerp(teamCol, 0.45);
+        const teamJointMat = new THREE.MeshStandardMaterial({
+            color: jointColor,
+            roughness: 0.5,
+        });
+        applyRimLighting(teamJointMat, 0.35);
+
+        // Create volumetric bones (cylinders) with per-bone radii
         const cylinderGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
         cylinderGeo.rotateX(Math.PI / 2); // Align with Z axis for easy 'lookAt'
 
         for (let i = 0; i < BONES.length; i++) {
-            const mesh = new THREE.Mesh(cylinderGeo, shared.limb);
+            const mesh = new THREE.Mesh(cylinderGeo, teamLimbMat);
             mesh.castShadow = true;
+            if (BONE_RADII[i] < 0) mesh.visible = false;
             this.boneMeshes.push(mesh);
             this.group.add(mesh);
         }
 
-        // Create joint spheres
-        const jointGeo = new THREE.SphereGeometry(1, 8, 8);
+        // Create joint spheres with per-joint radii (ball joints)
+        const jointGeo = new THREE.SphereGeometry(1, 10, 10);
         for (let i = 0; i < JOINT_COUNT; i++) {
-            const mesh = new THREE.Mesh(jointGeo, shared.joint);
-            mesh.scale.setScalar(Stickman.JOINT_RADIUS);
+            const mesh = new THREE.Mesh(jointGeo, teamJointMat);
+            const r = JOINT_RADII[i];
+            if (r < 0) {
+                mesh.visible = false;
+                mesh.scale.setScalar(0.01);
+            } else {
+                mesh.scale.setScalar(r);
+            }
             this.jointMeshes.push(mesh);
             this.group.add(mesh);
         }
 
-        // Head sphere — slightly larger for readability at distance
+        // Head sphere — team-tinted for readability at distance
         const headGeo = new THREE.SphereGeometry(0.17, 16, 16);
-        const headMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3 });
+        const headColor = new THREE.Color(0x1a1a1a).lerp(teamCol, 0.45);
+        const headMat = new THREE.MeshStandardMaterial({
+            color: headColor,
+            roughness: 0.3,
+        });
         applyRimLighting(headMat, 0.4);
         this.headMesh = new THREE.Mesh(headGeo, headMat);
         this.headMesh.castShadow = true;
@@ -197,104 +267,65 @@ export class Stickman {
         this.mouthMesh = new THREE.Mesh(mouthGeo, this.mouthMat);
         this.group.add(this.mouthMesh);
 
-        // Jersey (torso) - 8 vertices forming a shirt shape
-        // 0=L_collar, 1=R_collar, 2=L_shoulder_out, 3=L_hip, 4=R_hip, 5=R_shoulder_out, 6=L_back, 7=R_back
-        this.jerseyGeo = new THREE.BufferGeometry();
-        const jerseyPositions = new Float32Array(8 * 3);
-        const jerseyIndices = new Uint16Array([
-            // Front panel (two quads split diagonally)
-            0, 2, 3,   // L_collar -> L_shoulder -> L_hip
-            0, 3, 4,   // L_collar -> L_hip -> R_hip
-            0, 4, 5,   // L_collar -> R_hip -> R_shoulder
-            0, 5, 1,   // L_collar -> R_shoulder -> R_collar
-            // Back panel
-            6, 3, 2,   // L_back -> L_hip -> L_shoulder
-            6, 4, 3,   // L_back -> R_hip -> L_hip
-            6, 5, 4,   // L_back -> R_shoulder -> R_hip
-            6, 7, 5,   // L_back -> R_back -> R_shoulder
-            // Top shoulder strip (visible from above)
-            0, 1, 7,   // collar top
-            0, 7, 6,   // collar top
-        ]);
-        this.jerseyGeo.setAttribute(
-            'position',
-            new THREE.BufferAttribute(jerseyPositions, 3),
-        );
-        this.jerseyGeo.setIndex(new THREE.BufferAttribute(jerseyIndices, 1));
-        // Ensure team color is bright enough to see — floor at luminance 0.25
+        // Torso ellipsoid (replaces flat jersey polygon)
+        const torsoGeo = new THREE.SphereGeometry(1, 12, 10);
         const jerseyColor = new THREE.Color(teamColor);
-        const lum = jerseyColor.r * 0.299 + jerseyColor.g * 0.587 + jerseyColor.b * 0.114;
-        if (lum < 0.25) {
-            jerseyColor.lerp(new THREE.Color(0xffffff), 0.3);
-        }
-        const jerseyMat = new THREE.MeshStandardMaterial({
+        const torsoMat = new THREE.MeshStandardMaterial({
             color: jerseyColor,
-            side: THREE.DoubleSide,
+            roughness: 0.85,
+            metalness: 0.0,
             emissive: jerseyColor,
-            emissiveIntensity: 0.5,
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1,
+            emissiveIntensity: 0.15,
         });
-        applyRimLighting(jerseyMat, 0.6);
-        this.jerseyMesh = new THREE.Mesh(this.jerseyGeo, jerseyMat);
-        this.jerseyMesh.castShadow = true;
-        this.jerseyMesh.renderOrder = 1; // draw on top of limbs
-        this.jerseyMesh.frustumCulled = false; // positions update per-frame; bounding sphere would be stale
-        this.group.add(this.jerseyMesh);
+        this.torsoMesh = new THREE.Mesh(torsoGeo, torsoMat);
+        this.torsoMesh.castShadow = true;
+        this.torsoMesh.frustumCulled = false;
+        this.group.add(this.torsoMesh);
 
-        // Shorts - 6 vertices: waist_L, waist_R, L_knee, R_knee, waist_front, waist_back
-        this.shortsGeo = new THREE.BufferGeometry();
-        const shortsPositions = new Float32Array(6 * 3);
-        const shortsIndices = new Uint16Array([
-            // Left leg panel
-            4, 0, 2,   // waist_front -> waist_L -> L_knee
-            5, 2, 0,   // waist_back -> L_knee -> waist_L
-            // Right leg panel
-            4, 3, 1,   // waist_front -> R_knee -> waist_R
-            5, 1, 3,   // waist_back -> waist_R -> R_knee
-            // Center crotch panels
-            4, 2, 3,   // waist_front -> L_knee -> R_knee
-            5, 3, 2,   // waist_back -> R_knee -> L_knee
-        ]);
-        this.shortsGeo.setAttribute(
-            'position',
-            new THREE.BufferAttribute(shortsPositions, 3),
-        );
-        this.shortsGeo.setIndex(new THREE.BufferAttribute(shortsIndices, 1));
-        // Shorts are a darker shade of team color (but still visible)
+        // Pelvis ellipsoid (replaces flat shorts polygon)
+        const pelvisGeo = new THREE.SphereGeometry(1, 10, 8);
         const darkerColor = new THREE.Color(jerseyColor).multiplyScalar(0.65);
-        const shortsMat = new THREE.MeshStandardMaterial({
+        const pelvisMat = new THREE.MeshStandardMaterial({
             color: darkerColor,
-            side: THREE.DoubleSide,
+            roughness: 0.85,
+            metalness: 0.0,
             emissive: darkerColor,
-            emissiveIntensity: 0.35,
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1,
+            emissiveIntensity: 0.15,
         });
-        applyRimLighting(shortsMat, 0.4);
-        this.shortsMesh = new THREE.Mesh(this.shortsGeo, shortsMat);
-        this.shortsMesh.castShadow = true;
-        this.shortsMesh.renderOrder = 1;
-        this.shortsMesh.frustumCulled = false; // positions update per-frame; bounding sphere would be stale
-        this.group.add(this.shortsMesh);
+        this.pelvisMesh = new THREE.Mesh(pelvisGeo, pelvisMat);
+        this.pelvisMesh.castShadow = true;
+        this.pelvisMesh.frustumCulled = false;
+        this.group.add(this.pelvisMesh);
+
+        // Hand spheres at wrists
+        const handGeo = new THREE.SphereGeometry(0.04, 8, 8);
+        this.leftHandMesh = new THREE.Mesh(handGeo, teamLimbMat);
+        this.rightHandMesh = new THREE.Mesh(handGeo, teamLimbMat);
+        this.leftHandMesh.castShadow = true;
+        this.rightHandMesh.castShadow = true;
+        this.leftHandMesh.frustumCulled = false;
+        this.rightHandMesh.frustumCulled = false;
+        this.group.add(this.leftHandMesh);
+        this.group.add(this.rightHandMesh);
 
         // Shoes at ankles — box meshes for crisp ground contact readability
+        // Use secondary team color if provided, otherwise white
+        const shoeColor = new THREE.Color(secondaryColor ?? 0xffffff);
+        const shoeEmissive = shoeColor.clone().multiplyScalar(0.3);
         const shoeGeo = new THREE.BoxGeometry(0.08, 0.04, 0.12);
         this.leftShoeMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
+            color: shoeColor,
             roughness: 0.4,
             metalness: 0.1,
-            emissive: 0x444444,
+            emissive: shoeEmissive,
             emissiveIntensity: 0.15,
         });
         applyRimLighting(this.leftShoeMat, 0.3);
         this.rightShoeMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
+            color: shoeColor.clone(),
             roughness: 0.4,
             metalness: 0.1,
-            emissive: 0x444444,
+            emissive: shoeEmissive.clone(),
             emissiveIntensity: 0.15,
         });
         applyRimLighting(this.rightShoeMat, 0.3);
@@ -352,6 +383,8 @@ export class Stickman {
         const start = new THREE.Vector3();
         const end = new THREE.Vector3();
         for (let i = 0; i < BONES.length; i++) {
+            const r = BONE_RADII[i];
+            if (r < 0) continue; // hidden bone
             const [a, b] = BONES[i];
             start.set(this.worldJoints[a * 3], this.worldJoints[a * 3 + 1], this.worldJoints[a * 3 + 2]);
             end.set(this.worldJoints[b * 3], this.worldJoints[b * 3 + 1], this.worldJoints[b * 3 + 2]);
@@ -361,8 +394,8 @@ export class Stickman {
 
             // Position at midpoint
             mesh.position.copy(start).lerp(end, 0.5);
-            // Scale length (geometry was 1 unit long)
-            mesh.scale.set(Stickman.LIMB_RADIUS, Stickman.LIMB_RADIUS, dist);
+            // Scale: per-bone radius for width, distance for length
+            mesh.scale.set(r, r, dist);
             // Orient
             mesh.lookAt(end);
         }
@@ -444,93 +477,63 @@ export class Stickman {
             );
         }
 
-        // Update jersey torso shape (8 vertices)
-        // 0=L_collar, 1=R_collar, 2=L_shoulder_out, 3=L_hip, 4=R_hip, 5=R_shoulder_out, 6=L_back, 7=R_back
-        const jerseyPos = this.jerseyGeo.attributes.position as THREE.BufferAttribute;
+        // Update torso ellipsoid — position at midpoint of neck↔waist, scale to body proportions
         const wj = this.worldJoints;
-
         const neckX = wj[1 * 3], neckY = wj[1 * 3 + 1], neckZ = wj[1 * 3 + 2];
-        const lShX = wj[2 * 3], lShY = wj[2 * 3 + 1], lShZ = wj[2 * 3 + 2];
-        const rShX = wj[5 * 3], rShY = wj[5 * 3 + 1], rShZ = wj[5 * 3 + 2];
+        const lShX = wj[2 * 3], rShX = wj[5 * 3];
+        const lShZ = wj[2 * 3 + 2], rShZ = wj[5 * 3 + 2];
         const waistX = wj[8 * 3], waistY = wj[8 * 3 + 1], waistZ = wj[8 * 3 + 2];
+        const chestX = wj[13 * 3], chestY = wj[13 * 3 + 1], chestZ = wj[13 * 3 + 2];
 
-        // Shoulder direction (left to right) for widening
-        const sdx = rShX - lShX;
-        const sdz = rShZ - lShZ;
-        const sdLen = Math.sqrt(sdx * sdx + sdz * sdz) || 1;
-        const snx = sdx / sdLen;
-        const snz = sdz / sdLen;
+        // Shoulder span for torso width
+        const shoulderSpan = Math.sqrt((rShX - lShX) ** 2 + (rShZ - lShZ) ** 2);
+        const torsoHeight = Math.abs(neckY - waistY);
 
-        // Forward direction (perpendicular to shoulder line in XZ plane)
-        const fwdX = -snz;
-        const fwdZ = snx;
+        // Torso center between chest and waist (slightly above midpoint for a chest-heavy look)
+        const torsoCX = (chestX + waistX) * 0.5;
+        const torsoCY = (neckY + waistY) * 0.5;
+        const torsoCZ = (chestZ + waistZ) * 0.5;
 
-        const WIDEN = 0.14;   // extra width beyond shoulder joints
-        const DEPTH = 0.14;   // front/back depth
+        this.torsoMesh.position.set(torsoCX, torsoCY, torsoCZ);
+        this.torsoMesh.scale.set(
+            shoulderSpan * 0.55 + 0.04,   // width: half shoulder span + padding
+            torsoHeight * 0.5 + 0.02,     // height: half neck-to-waist
+            0.13,                          // depth: front-to-back thickness
+        );
+        this.torsoMesh.rotation.y = facing;
 
-        // Two collar points at neck height, spread apart for a proper neckline
-        const collarSpread = 0.06;
-        // 0: L collar (front)
-        jerseyPos.setXYZ(0,
-            neckX - snx * collarSpread + fwdX * DEPTH * 0.5, neckY,
-            neckZ - snz * collarSpread + fwdZ * DEPTH * 0.5);
-        // 1: R collar (front)
-        jerseyPos.setXYZ(1,
-            neckX + snx * collarSpread + fwdX * DEPTH * 0.5, neckY,
-            neckZ + snz * collarSpread + fwdZ * DEPTH * 0.5);
-        // 2: L shoulder outer
-        jerseyPos.setXYZ(2, lShX - snx * WIDEN, lShY, lShZ - snz * WIDEN);
-        // 3: L hip
-        jerseyPos.setXYZ(3, waistX - snx * (WIDEN + 0.02), waistY, waistZ - snz * (WIDEN + 0.02));
-        // 4: R hip
-        jerseyPos.setXYZ(4, waistX + snx * (WIDEN + 0.02), waistY, waistZ + snz * (WIDEN + 0.02));
-        // 5: R shoulder outer
-        jerseyPos.setXYZ(5, rShX + snx * WIDEN, rShY, rShZ + snz * WIDEN);
-        // 6: L collar (back)
-        jerseyPos.setXYZ(6,
-            neckX - snx * collarSpread - fwdX * DEPTH * 0.5, neckY,
-            neckZ - snz * collarSpread - fwdZ * DEPTH * 0.5);
-        // 7: R collar (back)
-        jerseyPos.setXYZ(7,
-            neckX + snx * collarSpread - fwdX * DEPTH * 0.5, neckY,
-            neckZ + snz * collarSpread - fwdZ * DEPTH * 0.5);
-
-        jerseyPos.needsUpdate = true;
-        this.jerseyGeo.computeVertexNormals();
-
-        // Update jersey number position: centered on back of torso, behind spine
+        // Update jersey number position: centered on back of torso
         if (this.jerseyNumberMesh) {
-            // Midpoint between neck and waist (upper back area)
-            const backX = (neckX + waistX) * 0.5 - fwdX * (DEPTH * 0.5 + 0.01);
-            const backY = (neckY + waistY) * 0.5;
-            const backZ = (neckZ + waistZ) * 0.5 - fwdZ * (DEPTH * 0.5 + 0.01);
-            this.jerseyNumberMesh.position.set(backX, backY, backZ);
-            // Face away from the player (backward direction)
+            const cos_f = Math.cos(facing);
+            const sin_f = Math.sin(facing);
+            const backOffset = 0.14;
+            this.jerseyNumberMesh.position.set(
+                torsoCX - sin_f * backOffset,
+                torsoCY,
+                torsoCZ - cos_f * backOffset,
+            );
             this.jerseyNumberMesh.rotation.y = facing + Math.PI;
         }
 
-        // Update shorts (6 vertices: 0=waist_L, 1=waist_R, 2=L_knee, 3=R_knee, 4=waist_front, 5=waist_back)
-        const shortsPos = this.shortsGeo.attributes.position as THREE.BufferAttribute;
-        const lKneeX = wj[9 * 3], lKneeY = wj[9 * 3 + 1], lKneeZ = wj[9 * 3 + 2];
-        const rKneeX = wj[11 * 3], rKneeY = wj[11 * 3 + 1], rKneeZ = wj[11 * 3 + 2];
-        // Mid-thigh point (shorts end above knee)
-        const shortsFrac = 0.55; // how far down from waist to knee
-        const lMidX = waistX + (lKneeX - waistX) * shortsFrac;
-        const lMidY = waistY + (lKneeY - waistY) * shortsFrac;
-        const lMidZ = waistZ + (lKneeZ - waistZ) * shortsFrac;
-        const rMidX = waistX + (rKneeX - waistX) * shortsFrac;
-        const rMidY = waistY + (rKneeY - waistY) * shortsFrac;
-        const rMidZ = waistZ + (rKneeZ - waistZ) * shortsFrac;
+        // Update pelvis ellipsoid — spans waist to upper thigh
+        const lHipX = wj[14 * 3], lHipY = wj[14 * 3 + 1], lHipZ = wj[14 * 3 + 2];
+        const rHipX = wj[15 * 3], rHipY = wj[15 * 3 + 1], rHipZ = wj[15 * 3 + 2];
+        const hipSpan = Math.sqrt((rHipX - lHipX) ** 2 + (rHipZ - lHipZ) ** 2);
+        const pelvisCX = (lHipX + rHipX) * 0.5;
+        const pelvisCY = (waistY + lHipY) * 0.5;
+        const pelvisCZ = (lHipZ + rHipZ) * 0.5;
 
-        const SHORTS_WIDEN = 0.09;
-        shortsPos.setXYZ(0, waistX - snx * (WIDEN + 0.02), waistY, waistZ - snz * (WIDEN + 0.02)); // waist L
-        shortsPos.setXYZ(1, waistX + snx * (WIDEN + 0.02), waistY, waistZ + snz * (WIDEN + 0.02)); // waist R
-        shortsPos.setXYZ(2, lMidX - snx * SHORTS_WIDEN, lMidY, lMidZ - snz * SHORTS_WIDEN); // L mid-thigh
-        shortsPos.setXYZ(3, rMidX + snx * SHORTS_WIDEN, rMidY, rMidZ + snz * SHORTS_WIDEN); // R mid-thigh
-        shortsPos.setXYZ(4, waistX + fwdX * DEPTH * 0.5, waistY, waistZ + fwdZ * DEPTH * 0.5); // waist front
-        shortsPos.setXYZ(5, waistX - fwdX * DEPTH * 0.5, waistY, waistZ - fwdZ * DEPTH * 0.5); // waist back
-        shortsPos.needsUpdate = true;
-        this.shortsGeo.computeVertexNormals();
+        this.pelvisMesh.position.set(pelvisCX, pelvisCY, pelvisCZ);
+        this.pelvisMesh.scale.set(
+            hipSpan * 0.55 + 0.03,     // width
+            Math.abs(waistY - lHipY) * 0.5 + 0.03, // height
+            0.11,                       // depth
+        );
+        this.pelvisMesh.rotation.y = facing;
+
+        // Update hand spheres at wrist joints
+        this.leftHandMesh.position.set(wj[4 * 3], wj[4 * 3 + 1], wj[4 * 3 + 2]);
+        this.rightHandMesh.position.set(wj[7 * 3], wj[7 * 3 + 1], wj[7 * 3 + 2]);
 
         // Update shoe positions (at ankles, joints 10=L_ankle, 12=R_ankle)
         this.leftShoeMesh.position.set(wj[10 * 3], wj[10 * 3 + 1] - 0.02, wj[10 * 3 + 2]);
@@ -830,15 +833,13 @@ export class Stickman {
 
     setJerseyColor(color: number): void {
         const c = new THREE.Color(color);
-        const lum = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
-        if (lum < 0.25) c.lerp(new THREE.Color(0xffffff), 0.3);
-        const mat = this.jerseyMesh.material as THREE.MeshStandardMaterial;
+        const mat = this.torsoMesh.material as THREE.MeshStandardMaterial;
         mat.color.copy(c);
         mat.emissive.copy(c);
-        const shortsMat = this.shortsMesh.material as THREE.MeshStandardMaterial;
+        const pelvisMat = this.pelvisMesh.material as THREE.MeshStandardMaterial;
         const darkerColor = c.clone().multiplyScalar(0.65);
-        shortsMat.color.copy(darkerColor);
-        shortsMat.emissive.copy(darkerColor);
+        pelvisMat.color.copy(darkerColor);
+        pelvisMat.emissive.copy(darkerColor);
     }
 
     setAccent(colorHex: string | null): void {
@@ -876,10 +877,12 @@ export class Stickman {
         });
         (this.headMesh.geometry as THREE.BufferGeometry).dispose();
         (this.headMesh.material as THREE.Material).dispose();
-        this.jerseyGeo.dispose();
-        (this.jerseyMesh.material as THREE.Material).dispose();
-        this.shortsGeo.dispose();
-        (this.shortsMesh.material as THREE.Material).dispose();
+        this.torsoMesh.geometry.dispose();
+        (this.torsoMesh.material as THREE.Material).dispose();
+        this.pelvisMesh.geometry.dispose();
+        (this.pelvisMesh.material as THREE.Material).dispose();
+        this.leftHandMesh.geometry.dispose();
+        this.rightHandMesh.geometry.dispose();
         this.leftShoeMesh.geometry.dispose();
         this.rightShoeMesh.geometry.dispose();
         this.leftShoeMat.dispose();

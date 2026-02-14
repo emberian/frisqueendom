@@ -54,10 +54,10 @@ pub fn perlin3d(x: f32, y: f32, z: f32) -> f32 {
 
     let a  = hash(xi).wrapping_add(hash(yi)) as i32;
     let aa = hash(a).wrapping_add(hash(zi)) as i32;
-    let ab = hash(a + 1).wrapping_add(hash(zi)) as i32;
-    let b  = hash(xi + 1).wrapping_add(hash(yi)) as i32;
+    let ab = hash(a.wrapping_add(1)).wrapping_add(hash(zi)) as i32;
+    let b  = hash(xi.wrapping_add(1)).wrapping_add(hash(yi)) as i32;
     let ba = hash(b).wrapping_add(hash(zi)) as i32;
-    let bb = hash(b + 1).wrapping_add(hash(zi)) as i32;
+    let bb = hash(b.wrapping_add(1)).wrapping_add(hash(zi)) as i32;
 
     lerp(
         lerp(
@@ -66,8 +66,8 @@ pub fn perlin3d(x: f32, y: f32, z: f32) -> f32 {
             v,
         ),
         lerp(
-            lerp(grad3d(hash(aa + 1), xf, yf, zf - 1.0), grad3d(hash(ba + 1), xf - 1.0, yf, zf - 1.0), u),
-            lerp(grad3d(hash(ab + 1), xf, yf - 1.0, zf - 1.0), grad3d(hash(bb + 1), xf - 1.0, yf - 1.0, zf - 1.0), u),
+            lerp(grad3d(hash(aa.wrapping_add(1)), xf, yf, zf - 1.0), grad3d(hash(ba.wrapping_add(1)), xf - 1.0, yf, zf - 1.0), u),
+            lerp(grad3d(hash(ab.wrapping_add(1)), xf, yf - 1.0, zf - 1.0), grad3d(hash(bb.wrapping_add(1)), xf - 1.0, yf - 1.0, zf - 1.0), u),
             v,
         ),
         w,

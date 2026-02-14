@@ -77,11 +77,12 @@ export class Player {
         role: PlayerRole,
         teamColor: number,
         index: number,
+        secondaryColor?: number,
     ) {
         this.team = team;
         this.role = role;
         this.index = index;
-        this.stickman = new Stickman(teamColor);
+        this.stickman = new Stickman(teamColor, secondaryColor);
     }
 
     get id(): string {

@@ -39,7 +39,7 @@ export class Team {
             'deep_cutter',
         ];
         for (let i = 0; i < 7; i++) {
-            const player = new Player(side, roles[i], primary, i);
+            const player = new Player(side, roles[i], primary, i, secondary);
             team.players.push(player);
             scene.add(player.stickman.group);
         }

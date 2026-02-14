@@ -126,11 +126,10 @@ export class LanRelayClient {
                 ws.addEventListener('open', onOpen);
                 ws.addEventListener('error', onError);
             });
-        } catch (error) {
+        } catch {
             this.onConnectionState(false, 'Failed to connect to relay server');
             this.ws = null;
             this.scheduleReconnect();
-            throw error;
         }
     }
 

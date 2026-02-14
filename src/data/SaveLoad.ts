@@ -10,6 +10,8 @@ const SAVE_KEY = 'frisqueendom_save_v1';
 const SETTINGS_KEY = 'frisqueendom_settings_v1';
 const REPLAY_KEY_PREFIX = 'frisqueendom_replay_';
 
+const SAVE_SCHEMA_VERSION = 2; // Bump from implicit v1
+
 export interface TeamData {
     id: string;
     name: string;
@@ -309,7 +311,7 @@ export interface CareerData {
     reputation: TeamReputation;
 }
 
-export type SeasonEvent = 
+export type SeasonEvent =
     | {
           id: string;
           type: 'tournament';
@@ -431,8 +433,28 @@ export interface GameSettings {
     };
 }
 
+// ---------------------------------------------------------------------------
+// New v2 types
+// ---------------------------------------------------------------------------
+
+export interface ChallengeProgressEntry {
+    bestMedal: 'none' | 'bronze' | 'silver' | 'gold' | 'diamond';
+    bestScore: number;
+    attempts: number;
+    lastAttempt: number; // timestamp
+}
+
+export interface RivalryEntry {
+    teamId: string;
+    teamName: string;
+    wins: number;
+    losses: number;
+    lastPlayed: number; // timestamp
+}
+
 export interface SaveData {
     version: number;
+    schemaVersion: number;
     lastSaved: number;
     career: CareerData | null;
     careers: Array<CareerData | null>;
@@ -442,6 +464,9 @@ export interface SaveData {
     achievements: string[];
     stats: GlobalStats;
     progression: ProgressionData;
+    settings: GameSettings;
+    challengeProgress: Record<string, ChallengeProgressEntry>;
+    rivalries: RivalryEntry[];
 }
 
 export interface GlobalStats {
@@ -589,52 +614,293 @@ export function getDefaultProgressionData(): ProgressionData {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Defaults generator
+// ---------------------------------------------------------------------------
+
+export function createDefaultSaveData(): SaveData {
+    return {
+        version: 1,
+        schemaVersion: SAVE_SCHEMA_VERSION,
+        lastSaved: Date.now(),
+        career: null,
+        careers: [null, null, null],
+        activeCareerSlot: 0,
+        quickMatchUnlocked: false,
+        tutorialCompleted: false,
+        achievements: [],
+        stats: {
+            totalGamesPlayed: 0,
+            totalPointsScored: 0,
+            careerGoals: 0,
+            careerAssists: 0,
+            careerBlocks: 0,
+            careerTurnovers: 0,
+            careerCompletions: 0,
+            careerAttempts: 0,
+            layoutCatches: 0,
+            skyWins: 0,
+            totalThrowDistanceMeters: 0,
+            totalPointsPlayed: 0,
+            totalWins: 0,
+            totalLosses: 0,
+            totalSpiritScore: 0,
+            bestHuckDistance: 0,
+            fastestScore: 0,
+            longestGame: 0,
+        },
+        progression: getDefaultProgressionData(),
+        settings: getDefaultSettings(),
+        challengeProgress: {},
+        rivalries: [],
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Settings validation
+// ---------------------------------------------------------------------------
+
+function clampVolume(value: unknown): number {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0.8;
+    return Math.max(0, Math.min(1, n));
+}
+
+const VALID_QUALITY_VALUES = new Set<string>(['low', 'medium', 'high']);
+const VALID_COLORBLIND_MODES = new Set<string>(['none', 'protanopia', 'deuteranopia', 'tritanopia']);
+
+export function validateSettings(raw: Partial<GameSettings> | null | undefined): GameSettings {
+    const defaults = getDefaultSettings();
+    if (!raw || typeof raw !== 'object') return defaults;
+
+    const merged = mergeSettings(defaults, raw);
+
+    // Clamp audio volumes to [0, 1]
+    merged.audio.masterVolume = clampVolume(merged.audio.masterVolume);
+    merged.audio.musicVolume = clampVolume(merged.audio.musicVolume);
+    merged.audio.sfxVolume = clampVolume(merged.audio.sfxVolume);
+    merged.audio.ambientVolume = clampVolume(merged.audio.ambientVolume);
+
+    // Validate quality enum
+    if (!VALID_QUALITY_VALUES.has(merged.graphics.quality)) {
+        merged.graphics.quality = defaults.graphics.quality;
+    }
+
+    // Clamp grass density to a sane range
+    if (!Number.isFinite(merged.graphics.grassDensity) || merged.graphics.grassDensity < 0) {
+        merged.graphics.grassDensity = defaults.graphics.grassDensity;
+    }
+    merged.graphics.grassDensity = Math.max(0, Math.min(100000, merged.graphics.grassDensity));
+
+    // Ensure booleans
+    merged.graphics.shadows = !!merged.graphics.shadows;
+    merged.graphics.particles = !!merged.graphics.particles;
+    merged.graphics.vsync = !!merged.graphics.vsync;
+
+    // Gameplay booleans
+    merged.gameplay.cameraShake = !!merged.gameplay.cameraShake;
+    merged.gameplay.screenShake = !!merged.gameplay.screenShake;
+    merged.gameplay.slowMotionReplays = !!merged.gameplay.slowMotionReplays;
+    merged.gameplay.autoSwitchOnCatch = !!merged.gameplay.autoSwitchOnCatch;
+    merged.gameplay.showTrajectory = !!merged.gameplay.showTrajectory;
+    merged.gameplay.stallWarnings = !!merged.gameplay.stallWarnings;
+
+    // Controls
+    const sensitivity = Number(merged.controls.mouseSensitivity);
+    merged.controls.mouseSensitivity = Number.isFinite(sensitivity)
+        ? Math.max(0.1, Math.min(5.0, sensitivity))
+        : defaults.controls.mouseSensitivity;
+    merged.controls.invertY = !!merged.controls.invertY;
+
+    // Accessibility
+    if (!VALID_COLORBLIND_MODES.has(merged.accessibility.colorBlindMode)) {
+        merged.accessibility.colorBlindMode = defaults.accessibility.colorBlindMode;
+    }
+    merged.accessibility.highContrast = !!merged.accessibility.highContrast;
+    merged.accessibility.largeText = !!merged.accessibility.largeText;
+    merged.accessibility.uiScale = clampUiScale(merged.accessibility.uiScale);
+    merged.accessibility.reducedMotion = !!merged.accessibility.reducedMotion;
+
+    return merged;
+}
+
+// ---------------------------------------------------------------------------
+// Schema migration
+// ---------------------------------------------------------------------------
+
+function migrateV1toV2(data: Record<string, unknown>): Record<string, unknown> {
+    // Add new v2 fields with defaults
+    if (!data.challengeProgress || typeof data.challengeProgress !== 'object') {
+        data.challengeProgress = {};
+    }
+    if (!Array.isArray(data.rivalries)) {
+        data.rivalries = [];
+    }
+    if (!data.settings || typeof data.settings !== 'object') {
+        data.settings = getDefaultSettings();
+    }
+    data.schemaVersion = 2;
+    return data;
+}
+
+/**
+ * Migrate raw save data from any older schemaVersion to the latest.
+ * Designed as a chain: v1 -> v2 -> v3 -> ... (extend by adding cases).
+ */
+export function migrateSaveData(data: Record<string, unknown>): Record<string, unknown> {
+    let version = typeof data.schemaVersion === 'number' ? data.schemaVersion : 1;
+
+    if (version < 2) {
+        migrateV1toV2(data);
+        version = 2;
+    }
+
+    // Future migrations go here:
+    // if (version < 3) { migrateV2toV3(data); version = 3; }
+
+    data.schemaVersion = SAVE_SCHEMA_VERSION;
+    return data;
+}
+
+// ---------------------------------------------------------------------------
+// Save data validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Deep-merge defaults into a partial save object, returning a fully valid
+ * SaveData. Returns null if the raw data is fundamentally unusable (e.g.
+ * not an object at all).
+ */
+export function validateSaveData(raw: unknown): SaveData | null {
+    if (!raw || typeof raw !== 'object') return null;
+
+    const data = raw as Record<string, unknown>;
+
+    // If it doesn't look like a save at all, bail out
+    if (typeof data.lastSaved !== 'number' && typeof data.version !== 'number') {
+        return null;
+    }
+
+    const defaults = createDefaultSaveData();
+
+    // Run migration first so new fields exist
+    if (typeof data.schemaVersion !== 'number' || data.schemaVersion < SAVE_SCHEMA_VERSION) {
+        migrateSaveData(data);
+    }
+
+    // Deep-merge each section against defaults
+    const result: SaveData = {
+        version: typeof data.version === 'number' ? data.version : defaults.version,
+        schemaVersion: SAVE_SCHEMA_VERSION,
+        lastSaved: typeof data.lastSaved === 'number' ? data.lastSaved : defaults.lastSaved,
+        career: (data.career as CareerData | null) ?? defaults.career,
+        careers: Array.isArray(data.careers)
+            ? (data.careers as Array<CareerData | null>)
+            : defaults.careers,
+        activeCareerSlot: typeof data.activeCareerSlot === 'number'
+            ? Math.max(0, Math.min(2, Math.floor(data.activeCareerSlot)))
+            : defaults.activeCareerSlot,
+        quickMatchUnlocked: typeof data.quickMatchUnlocked === 'boolean'
+            ? data.quickMatchUnlocked
+            : defaults.quickMatchUnlocked,
+        tutorialCompleted: typeof data.tutorialCompleted === 'boolean'
+            ? data.tutorialCompleted
+            : defaults.tutorialCompleted,
+        achievements: Array.isArray(data.achievements)
+            ? (data.achievements as string[])
+            : defaults.achievements,
+        stats: data.stats && typeof data.stats === 'object'
+            ? { ...defaults.stats, ...(data.stats as Partial<GlobalStats>) }
+            : defaults.stats,
+        progression: data.progression && typeof data.progression === 'object'
+            ? {
+                  ...defaults.progression,
+                  ...(data.progression as Partial<ProgressionData>),
+                  unlockedCosmetics: Array.isArray((data.progression as ProgressionData).unlockedCosmetics)
+                      ? (data.progression as ProgressionData).unlockedCosmetics
+                      : defaults.progression.unlockedCosmetics,
+                  dailyChallenges: Array.isArray((data.progression as ProgressionData).dailyChallenges)
+                      ? (data.progression as ProgressionData).dailyChallenges
+                      : defaults.progression.dailyChallenges,
+                  equippedCosmetics: (data.progression as ProgressionData).equippedCosmetics || defaults.progression.equippedCosmetics,
+              }
+            : defaults.progression,
+        settings: data.settings && typeof data.settings === 'object'
+            ? validateSettings(data.settings as Partial<GameSettings>)
+            : defaults.settings,
+        challengeProgress: data.challengeProgress && typeof data.challengeProgress === 'object'
+            ? (data.challengeProgress as Record<string, ChallengeProgressEntry>)
+            : defaults.challengeProgress,
+        rivalries: Array.isArray(data.rivalries)
+            ? (data.rivalries as RivalryEntry[])
+            : defaults.rivalries,
+    };
+
+    return result;
+}
+
 // Save manager class
 export class SaveManager {
     private static instance: SaveManager;
     private cache: SaveData | null = null;
     private settings: GameSettings;
-    
+
     private constructor() {
         this.settings = this.loadSettings();
     }
-    
+
     static getInstance(): SaveManager {
         if (!SaveManager.instance) {
             SaveManager.instance = new SaveManager();
         }
         return SaveManager.instance;
     }
-    
+
     // Check if save exists
     hasSave(): boolean {
         return localStorage.getItem(SAVE_KEY) !== null;
     }
-    
+
     // Load save data
     load(): SaveData | null {
         if (this.cache) return this.cache;
-        
+
         const data = localStorage.getItem(SAVE_KEY);
         if (!data) return null;
-        
+
         try {
             const parsed = JSON.parse(data);
-            this.cache = this.migrateSave(parsed);
+
+            // Validate structure; returns null if fundamentally corrupt
+            const validated = validateSaveData(parsed);
+            if (!validated) {
+                console.warn('Save data failed validation, returning defaults');
+                const defaults = createDefaultSaveData();
+                this.cache = defaults;
+                return this.cache;
+            }
+
+            // Run legacy migration (lineup ids, careers array, etc.)
+            this.cache = this.migrateSave(validated);
             return this.cache;
         } catch (e) {
             console.error('Failed to load save:', e);
             return null;
         }
     }
-    
+
     // Save data
     save(data: Partial<SaveData>): void {
         const existing = this.load() || this.createNewSave();
-        const merged = { ...existing, ...data, lastSaved: Date.now() };
-        
+        const merged = {
+            ...existing,
+            ...data,
+            lastSaved: Date.now(),
+            schemaVersion: SAVE_SCHEMA_VERSION,
+        };
+
         this.cache = merged as SaveData;
-        
+
         try {
             localStorage.setItem(SAVE_KEY, JSON.stringify(merged));
         } catch (e) {
@@ -650,80 +916,54 @@ export class SaveManager {
             }
         }
     }
-    
+
     // Create new save
     createNewSave(): SaveData {
-        return {
-            version: 1,
-            lastSaved: Date.now(),
-            career: null,
-            careers: [null, null, null],
-            activeCareerSlot: 0,
-            quickMatchUnlocked: false,
-            tutorialCompleted: false,
-            achievements: [],
-            stats: {
-                totalGamesPlayed: 0,
-                totalPointsScored: 0,
-                careerGoals: 0,
-                careerAssists: 0,
-                careerBlocks: 0,
-                careerTurnovers: 0,
-                careerCompletions: 0,
-                careerAttempts: 0,
-                layoutCatches: 0,
-                skyWins: 0,
-                totalThrowDistanceMeters: 0,
-                totalPointsPlayed: 0,
-                totalWins: 0,
-                totalLosses: 0,
-                totalSpiritScore: 0,
-                bestHuckDistance: 0,
-                fastestScore: 0,
-                longestGame: 0,
-            },
-            progression: getDefaultProgressionData(),
-        };
+        return createDefaultSaveData();
     }
-    
+
     // Delete save
     deleteSave(): void {
         localStorage.removeItem(SAVE_KEY);
         this.cache = null;
     }
-    
+
+    // Reset save to fresh defaults and persist
+    resetToDefaults(): SaveData {
+        const fresh = createDefaultSaveData();
+        this.cache = fresh;
+        try {
+            localStorage.setItem(SAVE_KEY, JSON.stringify(fresh));
+        } catch (e) {
+            console.error('Failed to persist defaults:', e);
+        }
+        return fresh;
+    }
+
     // Export save to string (for backup)
     exportSave(): string {
         const data = this.load();
         if (!data) return '';
         return btoa(JSON.stringify(data));
     }
-    
+
     // Import save from string
     importSave(saveString: string): boolean {
         try {
-            const data = this.migrateSave(JSON.parse(atob(saveString)));
-            if (this.validateSave(data)) {
-                localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-                this.cache = data;
-                return true;
-            }
-            return false;
+            const parsed = JSON.parse(atob(saveString));
+            const validated = validateSaveData(parsed);
+            if (!validated) return false;
+            const data = this.migrateSave(validated);
+            localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+            this.cache = data;
+            return true;
         } catch (e) {
             console.error('Failed to import save:', e);
             return false;
         }
     }
-    
-    // Validate save data structure
-    private validateSave(data: any): boolean {
-        return data && 
-               typeof data.version === 'number' &&
-               typeof data.lastSaved === 'number' &&
-               Array.isArray(data.achievements);
-    }
-    
-    // Migrate old save versions
+
+    // Migrate old save versions (legacy lineup/career-slot migrations)
     private migrateSave(data: any): SaveData {
         // Version 1 is current
         if (!data.version) {
@@ -752,6 +992,20 @@ export class SaveManager {
                 equippedCosmetics:
                     data.progression.equippedCosmetics || defaults.equippedCosmetics,
             };
+        }
+
+        // Ensure v2 fields survive legacy migration
+        if (!data.settings || typeof data.settings !== 'object') {
+            data.settings = getDefaultSettings();
+        }
+        if (!data.challengeProgress || typeof data.challengeProgress !== 'object') {
+            data.challengeProgress = {};
+        }
+        if (!Array.isArray(data.rivalries)) {
+            data.rivalries = [];
+        }
+        if (typeof data.schemaVersion !== 'number') {
+            data.schemaVersion = SAVE_SCHEMA_VERSION;
         }
 
         if (!Array.isArray(data.careers)) {
@@ -798,28 +1052,28 @@ export class SaveManager {
         data.career = data.careers[data.activeCareerSlot] || data.career || null;
         return data;
     }
-    
+
     // Settings management
     loadSettings(): GameSettings {
         const data = localStorage.getItem(SETTINGS_KEY);
         if (!data) return getDefaultSettings();
-        
+
         try {
             return mergeSettings(getDefaultSettings(), JSON.parse(data));
         } catch (e) {
             return getDefaultSettings();
         }
     }
-    
+
     saveSettings(settings: Partial<GameSettings>): void {
         this.settings = mergeSettings(this.settings, settings);
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
     }
-    
+
     getSettings(): GameSettings {
         return this.settings;
     }
-    
+
     // Replay management
     saveReplay(matchId: string, replayData: any): void {
         const key = REPLAY_KEY_PREFIX + matchId;
@@ -833,19 +1087,19 @@ export class SaveManager {
             localStorage.setItem(key, JSON.stringify({ date: Date.now(), data: replayData }));
         }
     }
-    
+
     loadReplay(matchId: string): any | null {
         const key = REPLAY_KEY_PREFIX + matchId;
         const data = localStorage.getItem(key);
         if (!data) return null;
-        
+
         try {
             return JSON.parse(data);
         } catch (e) {
             return null;
         }
     }
-    
+
     listReplays(): { id: string; date: number }[] {
         const replays: { id: string; date: number }[] = [];
         for (let i = 0; i < localStorage.length; i++) {
@@ -864,11 +1118,11 @@ export class SaveManager {
         }
         return replays.sort((a, b) => b.date - a.date);
     }
-    
+
     deleteReplay(matchId: string): void {
         localStorage.removeItem(REPLAY_KEY_PREFIX + matchId);
     }
-    
+
     private cleanupOldReplays(): void {
         const replays = this.listReplays();
         // Keep only 10 most recent
@@ -876,7 +1130,7 @@ export class SaveManager {
             this.deleteReplay(replays[i].id);
         }
     }
-    
+
     // Achievement tracking
     unlockAchievement(achievementId: string): void {
         const save = this.load();
@@ -885,12 +1139,12 @@ export class SaveManager {
             this.save(save);
         }
     }
-    
+
     hasAchievement(achievementId: string): boolean {
         const save = this.load();
         return save ? save.achievements.includes(achievementId) : false;
     }
-    
+
     // Global stats updates
     updateStats(updates: Partial<GlobalStats>): void {
         const save = this.load();
@@ -899,7 +1153,7 @@ export class SaveManager {
             this.save(save);
         }
     }
-    
+
     getStats(): GlobalStats {
         const save = this.load();
         return save ? save.stats : this.createNewSave().stats;
@@ -1378,7 +1632,7 @@ export function createNewCareer(
     }
     const offenseLineupIds = defaultOffenseLineupIds(roster);
     const defenseLineupIds = defaultDefenseLineupIds(roster);
-    
+
     const team: TeamData = {
         id: `team_${Date.now()}`,
         name: teamName,
@@ -1399,7 +1653,7 @@ export function createNewCareer(
             tournamentWins: 0,
         },
     };
-    
+
     const playbook: PlaybookData = {
         id: 'default',
         name: 'Default Playbook',
@@ -1451,7 +1705,7 @@ export function createNewCareer(
     });
     const chemistry = defaultChemistry(roster);
     const captainIds = defaultCaptainIds(roster);
-    
+
     return {
         playerName,
         teamName,
@@ -1624,7 +1878,7 @@ export function generateSeasonSchedule(
             date: week,
         });
     }
-    
+
     return schedule;
 }
 

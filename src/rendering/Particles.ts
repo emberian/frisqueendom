@@ -321,8 +321,9 @@ export class ParticleSystem {
         }
     }
 
-    emitRainDrop(fieldWidth: number, fieldLength: number): void {
-        for (let i = 0; i < MAX_PARTICLES; i++) {
+    emitRainDrop(fieldWidth: number, fieldLength: number, count: number = 8): void {
+        let spawned = 0;
+        for (let i = 0; i < MAX_PARTICLES && spawned < count; i++) {
             const p = this.particles[i];
             if (p.active) continue;
 
@@ -344,7 +345,7 @@ export class ParticleSystem {
             p.type = PARTICLE_TYPE.RAINDROP;
             p.rotation = 0;
             p.rotationSpeed = 0;
-            return;
+            spawned++;
         }
     }
 

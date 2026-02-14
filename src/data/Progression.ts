@@ -17,12 +17,20 @@ export interface ChallengeDefinition {
 
 export interface Unlockable {
     id: string;
-    type: 'cosmetic' | 'celebration' | 'trail';
+    type: 'cosmetic' | 'celebration' | 'trail' | 'disc_skin';
     name: string;
     levelRequired: number;
     description: string;
     assetKey: string;
+    rarity: 'common' | 'rare' | 'epic' | 'legendary';
 }
+
+export const RARITY_COLORS: Record<Unlockable['rarity'], string> = {
+    common: '#b0b0b0',
+    rare: '#4a86c8',
+    epic: '#a855f7',
+    legendary: '#f59e0b',
+};
 
 export const XP_PER_LEVEL = 1000;
 
@@ -65,6 +73,9 @@ export const DAILY_CHALLENGE_POOL: ChallengeDefinition[] = [
 ];
 
 export const UNLOCKABLES: Unlockable[] = [
+    // -----------------------------------------------------------------------
+    // Trails (9)
+    // -----------------------------------------------------------------------
     {
         id: 'trail_green',
         type: 'trail',
@@ -72,6 +83,7 @@ export const UNLOCKABLES: Unlockable[] = [
         levelRequired: 1,
         description: 'A vibrant green trail.',
         assetKey: '#39d67d',
+        rarity: 'common',
     },
     {
         id: 'trail_neon_blue',
@@ -80,22 +92,16 @@ export const UNLOCKABLES: Unlockable[] = [
         levelRequired: 2,
         description: 'A glowing blue trail for your throws.',
         assetKey: '#00ffff',
+        rarity: 'common',
     },
     {
-        id: 'cel_spike',
-        type: 'celebration',
-        name: 'Spike Celebration',
-        levelRequired: 3,
-        description: 'Spike the disc after scoring!',
-        assetKey: 'spike',
-    },
-    {
-        id: 'accent_gold',
-        type: 'cosmetic',
-        name: 'Gold Halo',
-        levelRequired: 5,
-        description: 'A shiny gold halo for your players.',
-        assetKey: '#ffd700',
+        id: 'trail_electric',
+        type: 'trail',
+        name: 'Electric Purple Trail',
+        levelRequired: 4,
+        description: 'Crackles of electric purple follow the disc.',
+        assetKey: '#7b68ee',
+        rarity: 'rare',
     },
     {
         id: 'trail_fire',
@@ -104,6 +110,83 @@ export const UNLOCKABLES: Unlockable[] = [
         levelRequired: 7,
         description: 'Leaves a burning trail behind the disc.',
         assetKey: '#ff4500',
+        rarity: 'rare',
+    },
+    {
+        id: 'trail_rainbow',
+        type: 'trail',
+        name: 'Rainbow Trail',
+        levelRequired: 8,
+        description: 'A shifting rainbow of colors streams behind every throw.',
+        assetKey: 'rainbow',
+        rarity: 'epic',
+    },
+    {
+        id: 'trail_shadow',
+        type: 'trail',
+        name: 'Shadow Trail',
+        levelRequired: 12,
+        description: 'A dark, smoky shadow clings to the disc in flight.',
+        assetKey: '#2c2c54',
+        rarity: 'rare',
+    },
+    {
+        id: 'trail_ice',
+        type: 'trail',
+        name: 'Frozen Ice Trail',
+        levelRequired: 15,
+        description: 'Crystalline ice particles shimmer in the disc wake.',
+        assetKey: '#00d2ff',
+        rarity: 'epic',
+    },
+    {
+        id: 'trail_golden_glow',
+        type: 'trail',
+        name: 'Golden Glow Trail',
+        levelRequired: 20,
+        description: 'A radiant golden aura envelops every throw.',
+        assetKey: '#ffd700',
+        rarity: 'legendary',
+    },
+    {
+        id: 'trail_huck_rainbow',
+        type: 'trail',
+        name: 'Huck Rainbow Trail',
+        levelRequired: 25,
+        description: 'A blazing rainbow arc appears only on deep huck throws.',
+        assetKey: 'huck_rainbow',
+        rarity: 'legendary',
+    },
+
+    // -----------------------------------------------------------------------
+    // Celebrations (6)
+    // -----------------------------------------------------------------------
+    {
+        id: 'cel_spike',
+        type: 'celebration',
+        name: 'Spike Celebration',
+        levelRequired: 3,
+        description: 'Spike the disc after scoring!',
+        assetKey: 'spike',
+        rarity: 'common',
+    },
+    {
+        id: 'cel_dab',
+        type: 'celebration',
+        name: 'Dab',
+        levelRequired: 6,
+        description: 'Hit them with the classic dab.',
+        assetKey: 'dab',
+        rarity: 'common',
+    },
+    {
+        id: 'cel_robot',
+        type: 'celebration',
+        name: 'Robot Dance',
+        levelRequired: 9,
+        description: 'Celebrate with jerky robot moves.',
+        assetKey: 'robot',
+        rarity: 'rare',
     },
     {
         id: 'cel_backflip',
@@ -112,6 +195,177 @@ export const UNLOCKABLES: Unlockable[] = [
         levelRequired: 10,
         description: 'Show off with a backflip.',
         assetKey: 'backflip',
+        rarity: 'rare',
+    },
+    {
+        id: 'cel_layout_dust',
+        type: 'celebration',
+        name: 'Layout Dust Cloud',
+        levelRequired: 14,
+        description: 'A dramatic dust cloud erupts on layout catches.',
+        assetKey: 'layout_dust',
+        rarity: 'epic',
+    },
+    {
+        id: 'cel_callahan_flash',
+        type: 'celebration',
+        name: 'Callahan Flash',
+        levelRequired: 22,
+        description: 'A blinding lightning flash celebrates your Callahan.',
+        assetKey: 'callahan_flash',
+        rarity: 'legendary',
+    },
+
+    // -----------------------------------------------------------------------
+    // Cosmetics / Jersey Accents (10)
+    // -----------------------------------------------------------------------
+    {
+        id: 'accent_headband',
+        type: 'cosmetic',
+        name: 'Red Headband',
+        levelRequired: 2,
+        description: 'A bold red headband for your player.',
+        assetKey: '#ff4444',
+        rarity: 'common',
+    },
+    {
+        id: 'accent_wristband',
+        type: 'cosmetic',
+        name: 'White Wristband',
+        levelRequired: 4,
+        description: 'Clean white wristbands on both arms.',
+        assetKey: '#ffffff',
+        rarity: 'common',
+    },
+    {
+        id: 'accent_gold',
+        type: 'cosmetic',
+        name: 'Gold Halo',
+        levelRequired: 5,
+        description: 'A shiny gold halo for your players.',
+        assetKey: '#ffd700',
+        rarity: 'rare',
+    },
+    {
+        id: 'accent_sunglasses',
+        type: 'cosmetic',
+        name: 'Cool Shades',
+        levelRequired: 8,
+        description: 'Dark sunglasses that never fall off, even during layouts.',
+        assetKey: '#333333',
+        rarity: 'rare',
+    },
+    {
+        id: 'accent_cape',
+        type: 'cosmetic',
+        name: 'Mini Cape',
+        levelRequired: 11,
+        description: 'A small flowing cape that flutters as you cut.',
+        assetKey: '#8b0000',
+        rarity: 'rare',
+    },
+    {
+        id: 'accent_crown',
+        type: 'cosmetic',
+        name: 'Golden Crown',
+        levelRequired: 15,
+        description: 'A regal golden crown befitting a field general.',
+        assetKey: '#ffd700',
+        rarity: 'epic',
+    },
+    {
+        id: 'accent_wings',
+        type: 'cosmetic',
+        name: 'Angel Wings',
+        levelRequired: 18,
+        description: 'Luminous angel wings that spread on layout dives.',
+        assetKey: '#ffffff',
+        rarity: 'epic',
+    },
+    {
+        id: 'accent_champion_ring',
+        type: 'cosmetic',
+        name: 'Champion Ring',
+        levelRequired: 20,
+        description: 'A glowing champion ring radiates on your hand.',
+        assetKey: '#ffd700',
+        rarity: 'legendary',
+    },
+    {
+        id: 'accent_dynasty_crown',
+        type: 'cosmetic',
+        name: 'Dynasty Crown',
+        levelRequired: 25,
+        description: 'A purple dynasty crown for the ultimate champion.',
+        assetKey: '#800080',
+        rarity: 'legendary',
+    },
+    {
+        id: 'accent_diamond_disc',
+        type: 'cosmetic',
+        name: 'Diamond Disc Outline',
+        levelRequired: 30,
+        description: 'A sparkling diamond outline traces every disc you throw.',
+        assetKey: '#b9f2ff',
+        rarity: 'legendary',
+    },
+
+    // -----------------------------------------------------------------------
+    // Disc Skins (6)
+    // -----------------------------------------------------------------------
+    {
+        id: 'disc_classic',
+        type: 'disc_skin',
+        name: 'Classic Disc',
+        levelRequired: 1,
+        description: 'The timeless default disc look.',
+        assetKey: 'classic',
+        rarity: 'common',
+    },
+    {
+        id: 'disc_camo',
+        type: 'disc_skin',
+        name: 'Camo Disc',
+        levelRequired: 5,
+        description: 'Green camouflage pattern for stealthy throws.',
+        assetKey: 'camo',
+        rarity: 'common',
+    },
+    {
+        id: 'disc_galaxy',
+        type: 'disc_skin',
+        name: 'Galaxy Disc',
+        levelRequired: 10,
+        description: 'A mesmerizing galaxy swirl across the disc face.',
+        assetKey: 'galaxy',
+        rarity: 'rare',
+    },
+    {
+        id: 'disc_fire',
+        type: 'disc_skin',
+        name: 'Flaming Disc',
+        levelRequired: 16,
+        description: 'Wreathed in flames from rim to rim.',
+        assetKey: 'fire',
+        rarity: 'epic',
+    },
+    {
+        id: 'disc_ice',
+        type: 'disc_skin',
+        name: 'Frozen Disc',
+        levelRequired: 19,
+        description: 'A disc of pure ice, crackling with frost.',
+        assetKey: 'ice',
+        rarity: 'epic',
+    },
+    {
+        id: 'disc_diamond',
+        type: 'disc_skin',
+        name: 'Diamond Disc',
+        levelRequired: 28,
+        description: 'A dazzling diamond disc that catches every ray of light.',
+        assetKey: 'diamond',
+        rarity: 'legendary',
     },
 ];
 
@@ -154,7 +408,18 @@ export interface Achievement {
     id: string;
     name: string;
     description: string;
-    category: 'throwing' | 'catching' | 'game' | 'career' | 'hidden';
+    category:
+        | 'throwing'
+        | 'catching'
+        | 'game'
+        | 'career'
+        | 'spirit'
+        | 'collection'
+        | 'challenge'
+        | 'social'
+        | 'milestone'
+        | 'hidden';
+    rarity: 'common' | 'rare' | 'epic' | 'legendary';
     requirement: { stat: string; target: number };
     reward: { xp: number; cosmeticId?: string };
 }
@@ -166,6 +431,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'First Blood',
         description: 'Score your first goal.',
         category: 'throwing',
+        rarity: 'common',
         requirement: { stat: 'careerGoals', target: 1 },
         reward: { xp: 50 },
     },
@@ -174,6 +440,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Sniper',
         description: '90%+ completion rate in a game (min 10 throws).',
         category: 'throwing',
+        rarity: 'rare',
         requirement: { stat: 'sniper_game', target: 1 },
         reward: { xp: 200 },
     },
@@ -182,6 +449,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Century',
         description: 'Score 100 career goals.',
         category: 'throwing',
+        rarity: 'epic',
         requirement: { stat: 'careerGoals', target: 100 },
         reward: { xp: 500, cosmeticId: 'accent_century' },
     },
@@ -190,6 +458,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Huck Master',
         description: 'Complete 50 hucks over 40m.',
         category: 'throwing',
+        rarity: 'epic',
         requirement: { stat: 'hucks_over_40m', target: 50 },
         reward: { xp: 400, cosmeticId: 'trail_huck_rainbow' },
     },
@@ -198,6 +467,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Assist King',
         description: 'Record 100 career assists.',
         category: 'throwing',
+        rarity: 'epic',
         requirement: { stat: 'careerAssists', target: 100 },
         reward: { xp: 400 },
     },
@@ -206,6 +476,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Thousand Threads',
         description: 'Complete 1,000 career passes.',
         category: 'throwing',
+        rarity: 'epic',
         requirement: { stat: 'careerCompletions', target: 1000 },
         reward: { xp: 500 },
     },
@@ -214,6 +485,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Break Artist',
         description: 'Complete 25 break-mark throws.',
         category: 'throwing',
+        rarity: 'rare',
         requirement: { stat: 'break_mark_completions', target: 25 },
         reward: { xp: 300 },
     },
@@ -222,6 +494,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Versatile Thrower',
         description: 'Score with backhand, forehand, hammer, and scoober.',
         category: 'throwing',
+        rarity: 'rare',
         requirement: { stat: 'throw_types_scored', target: 4 },
         reward: { xp: 250 },
     },
@@ -230,6 +503,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Long Bomb',
         description: 'Complete a throw of 60m or more.',
         category: 'throwing',
+        rarity: 'rare',
         requirement: { stat: 'bestHuckDistance', target: 60 },
         reward: { xp: 200 },
     },
@@ -238,6 +512,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Goal Machine',
         description: 'Score 500 career goals.',
         category: 'throwing',
+        rarity: 'legendary',
         requirement: { stat: 'careerGoals', target: 500 },
         reward: { xp: 750, cosmeticId: 'accent_golden_arm' },
     },
@@ -248,6 +523,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Layout Legend',
         description: 'Make 50 layout catches.',
         category: 'catching',
+        rarity: 'epic',
         requirement: { stat: 'layoutCatches', target: 50 },
         reward: { xp: 400, cosmeticId: 'cel_layout_dust' },
     },
@@ -256,6 +532,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Sky Dominator',
         description: 'Win 30 contested sky battles.',
         category: 'catching',
+        rarity: 'epic',
         requirement: { stat: 'skyWins', target: 30 },
         reward: { xp: 350 },
     },
@@ -264,6 +541,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Sure Hands',
         description: 'Catch 100 throws without a drop.',
         category: 'catching',
+        rarity: 'rare',
         requirement: { stat: 'consecutive_catches', target: 100 },
         reward: { xp: 300 },
     },
@@ -272,6 +550,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Full Extension',
         description: 'Make your first layout catch.',
         category: 'catching',
+        rarity: 'common',
         requirement: { stat: 'layoutCatches', target: 1 },
         reward: { xp: 100 },
     },
@@ -280,6 +559,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Sky High',
         description: 'Win your first contested sky battle.',
         category: 'catching',
+        rarity: 'common',
         requirement: { stat: 'skyWins', target: 1 },
         reward: { xp: 100 },
     },
@@ -290,6 +570,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Perfect Game',
         description: 'Win a game without a single turnover.',
         category: 'game',
+        rarity: 'legendary',
         requirement: { stat: 'perfect_games', target: 1 },
         reward: { xp: 500, cosmeticId: 'trail_golden_glow' },
     },
@@ -298,6 +579,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Upset',
         description: 'Beat a team ranked 10+ spots above you.',
         category: 'game',
+        rarity: 'rare',
         requirement: { stat: 'upsets', target: 1 },
         reward: { xp: 300 },
     },
@@ -306,6 +588,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Comeback King',
         description: 'Win after being down 5+ points.',
         category: 'game',
+        rarity: 'epic',
         requirement: { stat: 'comebacks', target: 1 },
         reward: { xp: 400 },
     },
@@ -314,6 +597,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Shutout Artist',
         description: 'Win a game 15-0.',
         category: 'game',
+        rarity: 'epic',
         requirement: { stat: 'shutouts', target: 1 },
         reward: { xp: 400 },
     },
@@ -322,6 +606,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Universe Clutch',
         description: 'Win on universe point.',
         category: 'game',
+        rarity: 'rare',
         requirement: { stat: 'universe_wins', target: 1 },
         reward: { xp: 350 },
     },
@@ -330,6 +615,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Getting Started',
         description: 'Win 10 games.',
         category: 'game',
+        rarity: 'common',
         requirement: { stat: 'totalWins', target: 10 },
         reward: { xp: 150 },
     },
@@ -338,6 +624,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Veteran',
         description: 'Win 50 games.',
         category: 'game',
+        rarity: 'rare',
         requirement: { stat: 'totalWins', target: 50 },
         reward: { xp: 400 },
     },
@@ -346,6 +633,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Champion',
         description: 'Win 100 games.',
         category: 'game',
+        rarity: 'epic',
         requirement: { stat: 'totalWins', target: 100 },
         reward: { xp: 600, cosmeticId: 'accent_champion_ring' },
     },
@@ -356,6 +644,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Iron Person',
         description: 'Play every point in a tournament.',
         category: 'career',
+        rarity: 'rare',
         requirement: { stat: 'iron_person_tournaments', target: 1 },
         reward: { xp: 350 },
     },
@@ -364,6 +653,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'The Wall',
         description: 'Record 100 career blocks.',
         category: 'career',
+        rarity: 'epic',
         requirement: { stat: 'careerBlocks', target: 100 },
         reward: { xp: 500, cosmeticId: 'accent_brick_wall' },
     },
@@ -372,6 +662,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Dynasty',
         description: 'Win nationals 3 times.',
         category: 'career',
+        rarity: 'legendary',
         requirement: { stat: 'nationals_titles', target: 3 },
         reward: { xp: 1000, cosmeticId: 'accent_dynasty_crown' },
     },
@@ -380,6 +671,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Spirit Champion',
         description: 'Achieve a perfect spirit score in a tournament.',
         category: 'career',
+        rarity: 'rare',
         requirement: { stat: 'perfect_spirit_tournaments', target: 1 },
         reward: { xp: 300 },
     },
@@ -388,6 +680,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Rookie Season',
         description: 'Complete your first season.',
         category: 'career',
+        rarity: 'common',
         requirement: { stat: 'seasons_completed', target: 1 },
         reward: { xp: 200 },
     },
@@ -396,6 +689,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Marathon',
         description: 'Play 500 career points.',
         category: 'career',
+        rarity: 'rare',
         requirement: { stat: 'totalPointsPlayed', target: 500 },
         reward: { xp: 400 },
     },
@@ -404,6 +698,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Distance Runner',
         description: 'Throw a cumulative 10,000 meters.',
         category: 'career',
+        rarity: 'rare',
         requirement: { stat: 'totalThrowDistanceMeters', target: 10000 },
         reward: { xp: 350 },
     },
@@ -414,6 +709,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Callahan',
         description: 'Score a Callahan goal (intercept in the end zone).',
         category: 'hidden',
+        rarity: 'legendary',
         requirement: { stat: 'callahan_goals', target: 1 },
         reward: { xp: 500, cosmeticId: 'cel_callahan_flash' },
     },
@@ -422,6 +718,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'The Greatest',
         description: 'Throw a "greatest" (jump from in-bounds, throw while airborne out-of-bounds).',
         category: 'hidden',
+        rarity: 'legendary',
         requirement: { stat: 'greatest_throws', target: 1 },
         reward: { xp: 500, cosmeticId: 'trail_greatest_spark' },
     },
@@ -430,6 +727,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Gauntlet Survivor',
         description: 'Win 5 games in a row on Legend difficulty.',
         category: 'hidden',
+        rarity: 'legendary',
         requirement: { stat: 'gauntlet_completions', target: 1 },
         reward: { xp: 750, cosmeticId: 'accent_diamond_disc' },
     },
@@ -438,6 +736,7 @@ export const ACHIEVEMENT_CATALOG: Achievement[] = [
         name: 'Night Owl',
         description: 'Play a game after midnight local time.',
         category: 'hidden',
+        rarity: 'rare',
         requirement: { stat: 'midnight_games', target: 1 },
         reward: { xp: 100 },
     },

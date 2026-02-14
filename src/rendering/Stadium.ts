@@ -88,13 +88,19 @@ export class Stadium {
 
         for (let side = 0; side < 2; side++) {
             const xDir = side === 0 ? -1 : 1;
-            const xBase = (FIELD_WIDTH / 2 + 8) * xDir;
+            // Match bleacher geometry: starts at FIELD_WIDTH/2 + 6, stepDepth=1.8
+            const bleacherStart = FIELD_WIDTH / 2 + 6;
+            const stepDepth = 1.8;
+            const stepHeight = 0.7;
 
             for (let row = 0; row < rowCount; row++) {
                 for (let p = 0; row < rowCount && p < peoplePerRow; p++) {
                     const z = (p / peoplePerRow) * (FIELD_LENGTH + 10) - 5;
-                    const x = xBase + (row * 4 * xDir) + (THREE.MathUtils.randFloat(-0.5, 0.5));
-                    const y = 1.2 + row * 1.5;
+                    // Place crowd on bleacher step rows (rows 1, 3, 5 of the 6 steps)
+                    const bleacherRow = 1 + row * 2;
+                    const x = (bleacherStart + bleacherRow * stepDepth + stepDepth / 2) * xDir
+                        + THREE.MathUtils.randFloat(-0.4, 0.4);
+                    const y = bleacherRow * stepHeight + stepHeight + 0.3;
 
                     dummy.position.set(x, y, z);
                     dummy.rotation.y = side === 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -152,35 +158,49 @@ export class Stadium {
     }
 
     private createBleachers(): void {
-        const bleacherGeo = new THREE.BoxGeometry(FIELD_LENGTH + 20, 2, 5);
-        const bleacherMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+        const rowCount = 6;
+        const stepHeight = 0.7;
+        const stepDepth = 1.8;
+        const bleacherLength = FIELD_LENGTH + 20;
 
-        // Left side bleachers
-        const left = new THREE.Mesh(bleacherGeo, bleacherMat);
-        left.position.set(-FIELD_WIDTH / 2 - 8, 1, FIELD_LENGTH / 2);
-        left.rotation.y = Math.PI / 2;
-        left.castShadow = true;
-        left.receiveShadow = true;
-        this.group.add(left);
+        for (let side = 0; side < 2; side++) {
+            const xDir = side === 0 ? -1 : 1;
+            const xBase = (FIELD_WIDTH / 2 + 6) * xDir;
 
-        // Right side bleachers
-        const right = left.clone();
-        right.position.x = FIELD_WIDTH / 2 + 8;
-        this.group.add(right);
+            for (let row = 0; row < rowCount; row++) {
+                // Concrete step — darker at bottom, lighter at top
+                const brightness = 0x44 + row * 0x06;
+                const stepColor = (brightness << 16) | (brightness << 8) | brightness;
+                const stepMat = new THREE.MeshStandardMaterial({
+                    color: stepColor,
+                    roughness: 0.85,
+                });
+                const stepGeo = new THREE.BoxGeometry(stepDepth, stepHeight, bleacherLength);
+                const step = new THREE.Mesh(stepGeo, stepMat);
+                const x = xBase + (row * stepDepth + stepDepth / 2) * xDir;
+                const y = row * stepHeight + stepHeight / 2;
+                step.position.set(x, y, FIELD_LENGTH / 2);
+                step.castShadow = true;
+                step.receiveShadow = true;
+                this.group.add(step);
 
-        // Add steps/tiers
-        for (let i = 1; i < 3; i++) {
-            const tier = new THREE.Mesh(
-                new THREE.BoxGeometry(FIELD_LENGTH + 20, 2, 5),
-                bleacherMat
-            );
-            tier.position.set(-FIELD_WIDTH / 2 - 8 - i * 4, 1 + i * 1.5, FIELD_LENGTH / 2);
-            tier.rotation.y = Math.PI / 2;
-            this.group.add(tier);
-
-            const tierR = tier.clone();
-            tierR.position.x = FIELD_WIDTH / 2 + 8 + i * 4;
-            this.group.add(tierR);
+                // Bench plank on top of each step
+                const plankMat = new THREE.MeshStandardMaterial({
+                    color: 0x666666,
+                    roughness: 0.6,
+                    metalness: 0.15,
+                });
+                const plankGeo = new THREE.BoxGeometry(
+                    stepDepth * 0.7,
+                    0.06,
+                    bleacherLength - 0.4,
+                );
+                const plank = new THREE.Mesh(plankGeo, plankMat);
+                plank.position.set(x, y + stepHeight / 2 + 0.03, FIELD_LENGTH / 2);
+                plank.castShadow = true;
+                plank.receiveShadow = true;
+                this.group.add(plank);
+            }
         }
     }
 
@@ -189,10 +209,10 @@ export class Stadium {
         const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
         const lightBoxGeo = new THREE.BoxGeometry(2, 1.5, 1);
         const lightBoxMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-        const emissiveMat = new THREE.MeshStandardMaterial({ 
-            color: 0xffffff, 
-            emissive: 0xffffff, 
-            emissiveIntensity: 5 
+        const emissiveMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            emissive: 0xffffff,
+            emissiveIntensity: 5
         });
 
         const corners = [
@@ -220,27 +240,54 @@ export class Stadium {
     }
 
     private createFence(): void {
-        // Simple low-poly boundary fence
-        const fenceGeo = new THREE.BoxGeometry(FIELD_WIDTH + 20, 0.8, 0.1);
-        const fenceMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+        const postSpacing = 5;
+        const postHeight = 1.0;
+        const postRadius = 0.04;
+        const railHeights = [0.35, 0.75]; // two horizontal rails
 
-        const back = new THREE.Mesh(fenceGeo, fenceMat);
-        back.position.set(0, 0.4, -5);
-        this.group.add(back);
+        const postGeo = new THREE.CylinderGeometry(postRadius, postRadius, postHeight, 6);
+        const postMat = new THREE.MeshStandardMaterial({
+            color: 0x555555,
+            metalness: 0.3,
+            roughness: 0.6,
+        });
 
-        const front = back.clone();
-        front.position.z = FIELD_LENGTH + 5;
-        this.group.add(front);
+        const _yAxis = new THREE.Vector3(0, 1, 0);
 
-        const sideGeo = new THREE.BoxGeometry(FIELD_LENGTH + 10, 0.8, 0.1);
-        const left = new THREE.Mesh(sideGeo, fenceMat);
-        left.position.set(-FIELD_WIDTH / 2 - 5, 0.4, FIELD_LENGTH / 2);
-        left.rotation.y = Math.PI / 2;
-        this.group.add(left);
+        // Fence perimeter: back, front, left side, right side
+        const segments: { start: THREE.Vector3; end: THREE.Vector3 }[] = [
+            { start: new THREE.Vector3(-FIELD_WIDTH / 2 - 5, 0, -5), end: new THREE.Vector3(FIELD_WIDTH / 2 + 5, 0, -5) },
+            { start: new THREE.Vector3(-FIELD_WIDTH / 2 - 5, 0, FIELD_LENGTH + 5), end: new THREE.Vector3(FIELD_WIDTH / 2 + 5, 0, FIELD_LENGTH + 5) },
+            { start: new THREE.Vector3(-FIELD_WIDTH / 2 - 5, 0, -5), end: new THREE.Vector3(-FIELD_WIDTH / 2 - 5, 0, FIELD_LENGTH + 5) },
+            { start: new THREE.Vector3(FIELD_WIDTH / 2 + 5, 0, -5), end: new THREE.Vector3(FIELD_WIDTH / 2 + 5, 0, FIELD_LENGTH + 5) },
+        ];
 
-        const right = left.clone();
-        right.position.x = FIELD_WIDTH / 2 + 5;
-        this.group.add(right);
+        for (const seg of segments) {
+            const segLen = seg.start.distanceTo(seg.end);
+            const dir = seg.end.clone().sub(seg.start).normalize();
+            const postCount = Math.floor(segLen / postSpacing) + 1;
+
+            // Posts
+            for (let i = 0; i < postCount; i++) {
+                const t = i / Math.max(1, postCount - 1);
+                const pos = seg.start.clone().lerp(seg.end, t);
+                const post = new THREE.Mesh(postGeo, postMat);
+                post.position.set(pos.x, postHeight / 2, pos.z);
+                post.castShadow = true;
+                this.group.add(post);
+            }
+
+            // Horizontal rails — orient cylinder Y-axis along segment direction
+            for (const rh of railHeights) {
+                const railGeo = new THREE.CylinderGeometry(0.02, 0.02, segLen, 6);
+                const rail = new THREE.Mesh(railGeo, postMat);
+                const mid = seg.start.clone().lerp(seg.end, 0.5);
+                rail.position.set(mid.x, rh, mid.z);
+                rail.quaternion.setFromUnitVectors(_yAxis, dir);
+                rail.castShadow = true;
+                this.group.add(rail);
+            }
+        }
     }
 
     // ---- Team Banners ----
@@ -466,7 +513,7 @@ export class Stadium {
     // ---- Crowd LOD (distant filler strips) ----
 
     private createCrowdLOD(): void {
-        // 2-3 horizontal strips of colored boxes along each sideline, behind the bleachers
+        // Horizontal strips of colored boxes along each sideline, behind the bleachers
         // These represent distant seated spectators at a coarse LOD
         const stripLength = FIELD_LENGTH + 16;
         const stripHeight = 0.8;
@@ -476,13 +523,13 @@ export class Stadium {
         // Section colors alternate to suggest different crowd sections
         const sectionColors = [0x993333, 0x336699, 0x996633, 0x339966, 0x663399];
 
-        const sideOffsetBase = FIELD_WIDTH / 2 + 18; // behind the outermost bleacher tier
+        // New bleachers extend to FIELD_WIDTH/2 + 6 + 6*1.8 ≈ FIELD_WIDTH/2 + 17
+        const sideOffsetBase = FIELD_WIDTH / 2 + 18;
 
         for (let side = 0; side < 2; side++) {
             const xDir = side === 0 ? -1 : 1;
 
             for (let row = 0; row < rowCount; row++) {
-                // Split each row into ~5 sections with alternating colors
                 const sectionsPerRow = 5;
                 const sectionLength = stripLength / sectionsPerRow;
 
@@ -490,7 +537,8 @@ export class Stadium {
                     const colorIdx = (row * sectionsPerRow + s + side) % sectionColors.length;
                     const color = sectionColors[colorIdx];
 
-                    const geo = new THREE.BoxGeometry(sectionLength - 0.3, stripHeight, stripDepth);
+                    // Strips run along Z (sideline), depth along X
+                    const geo = new THREE.BoxGeometry(stripDepth, stripHeight, sectionLength - 0.3);
                     const mat = new THREE.MeshStandardMaterial({
                         color,
                         roughness: 0.9,
@@ -499,7 +547,7 @@ export class Stadium {
 
                     const strip = new THREE.Mesh(geo, mat);
                     const x = (sideOffsetBase + row * 3.5) * xDir;
-                    const y = 2.5 + row * 1.8;
+                    const y = 3.0 + row * 1.5;
                     const z = -8 + sectionLength / 2 + s * sectionLength;
 
                     strip.position.set(x, y, z);

@@ -11,6 +11,9 @@ export class PostFX {
     private shakeFrequency = 30;
     private shakeDecay = 0;
     private shakeTimer = 0;
+    private shakeAppliedX = 0;
+    private shakeAppliedY = 0;
+    private lastCamera: THREE.PerspectiveCamera | null = null;
 
     // Phased slow-mo state
     private slowMoPhase: 'idle' | 'ramp_down' | 'hold' | 'ramp_up' = 'idle';
@@ -67,7 +70,7 @@ export class PostFX {
                 'tDiffuse': { value: null },
                 'offset': { value: 1.0 },
                 'darkness': { value: 0.3 },
-                'aberration': { value: 0.002 },
+                'aberration': { value: 0.0014 },
                 'grain': { value: 0.04 },
                 'time': { value: 0.0 }
             },
@@ -325,21 +328,28 @@ export class PostFX {
                 varying vec2 vUv;
 
                 vec3 applyLUT(vec3 color) {
-                    float sliceSize = 1.0 / lutSize;
-                    float slicePixelSize = sliceSize / lutSize;
-                    float sliceInnerSize = slicePixelSize * (lutSize - 1.0);
+                    // Texture is (lutSize*lutSize) wide x lutSize tall
+                    // X axis: lutSize blue slices, each lutSize pixels wide (R within slice)
+                    // Y axis: lutSize pixels for green channel
+                    float sliceSize = 1.0 / lutSize;           // UV width of one blue slice
+                    float xPixelSize = sliceSize / lutSize;    // UV width of one pixel (1/256)
+                    float xInnerSize = xPixelSize * (lutSize - 1.0); // UV span of R within a slice
+                    float yPixelSize = 1.0 / lutSize;          // UV height of one pixel (1/16)
+                    float yInnerSize = yPixelSize * (lutSize - 1.0); // UV span of G across height
 
                     float blueSlice0 = floor(color.b * (lutSize - 1.0));
                     float blueSlice1 = min(blueSlice0 + 1.0, lutSize - 1.0);
                     float blueFract = color.b * (lutSize - 1.0) - blueSlice0;
 
+                    float v = yPixelSize * 0.5 + color.g * yInnerSize;
+
                     vec2 uv0 = vec2(
-                        blueSlice0 * sliceSize + slicePixelSize * 0.5 + color.r * sliceInnerSize,
-                        slicePixelSize * 0.5 + color.g * sliceInnerSize
+                        blueSlice0 * sliceSize + xPixelSize * 0.5 + color.r * xInnerSize,
+                        v
                     );
                     vec2 uv1 = vec2(
-                        blueSlice1 * sliceSize + slicePixelSize * 0.5 + color.r * sliceInnerSize,
-                        slicePixelSize * 0.5 + color.g * sliceInnerSize
+                        blueSlice1 * sliceSize + xPixelSize * 0.5 + color.r * xInnerSize,
+                        v
                     );
 
                     vec3 lutColor0 = texture2D(tLUT, uv0).rgb;
@@ -458,7 +468,7 @@ export class PostFX {
         this.shakeDecay = 8;
         this.shakeTimer = 0;
         this.bloomPulse = 1.0;
-        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.025;
+        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.018;
     }
 
     triggerLayoutEffect(): void {
@@ -467,7 +477,7 @@ export class PostFX {
         this.shakeDecay = 15;
         this.shakeTimer = 0;
         this.bloomPulse = 0.5;
-        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.012;
+        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.008;
     }
 
     triggerBlockShake(): void {
@@ -475,7 +485,7 @@ export class PostFX {
         this.shakeDecay = 10;
         this.shakeTimer = 0;
         this.bloomPulse = 0.3;
-        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.01;
+        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.007;
     }
 
     triggerSmallShake(): void {
@@ -485,6 +495,7 @@ export class PostFX {
     }
 
     update(dt: number, camera: THREE.PerspectiveCamera): void {
+        this.lastCamera = camera;
         this.elapsedTime += dt;
 
         // --- Phased slow-mo ---
@@ -502,7 +513,7 @@ export class PostFX {
         if (this.vignettePass) {
             this.vignettePass.uniforms.aberration.value = THREE.MathUtils.lerp(
                 this.vignettePass.uniforms.aberration.value,
-                0.001,
+                0.0007,
                 1 - Math.exp(-5 * dt)
             );
 
@@ -557,21 +568,23 @@ export class PostFX {
             this.lutPass.uniforms.intensity.value = this.lutIntensity;
         }
 
-        // Screen shake
+        // Screen shake — apply offset, track it for restore after render
+        this.shakeAppliedX = 0;
+        this.shakeAppliedY = 0;
         if (this.shakeAmplitude > 0.001) {
             this.shakeTimer += dt;
             const decay = Math.exp(-this.shakeDecay * this.shakeTimer);
-            const offsetX =
+            this.shakeAppliedX =
                 this.shakeAmplitude *
                 decay *
                 Math.sin(this.shakeTimer * this.shakeFrequency);
-            const offsetY =
+            this.shakeAppliedY =
                 this.shakeAmplitude *
                 decay *
                 Math.cos(this.shakeTimer * this.shakeFrequency * 1.3);
 
-            camera.position.x += offsetX;
-            camera.position.y += offsetY;
+            camera.position.x += this.shakeAppliedX;
+            camera.position.y += this.shakeAppliedY;
 
             if (decay < 0.01) {
                 this.shakeAmplitude = 0;
@@ -648,6 +661,12 @@ export class PostFX {
                 gain: [1.1, 1.05, 0.95],
                 saturation: 1.1
             },
+            midday: {
+                lift: [0.0, 0.0, 0.0],
+                gamma: [1.0, 1.0, 1.0],
+                gain: [1.0, 1.0, 1.0],
+                saturation: 1.0
+            },
             afternoon: {
                 lift: [0.0, 0.0, 0.0],
                 gamma: [1.0, 1.0, 1.0],
@@ -683,8 +702,11 @@ export class PostFX {
         const grade = grades[preset] ?? grades.afternoon;
 
         let idx = 0;
-        for (let b = 0; b < size; b++) {
-            for (let g = 0; g < size; g++) {
+        // Layout: texture is (size*size) wide x size tall
+        // X axis = Blue slices (size groups of size pixels), R within each slice
+        // Y axis = Green
+        for (let g = 0; g < size; g++) {
+            for (let b = 0; b < size; b++) {
                 for (let r = 0; r < size; r++) {
                     // Normalize to 0-1
                     let cr = r / (size - 1);
@@ -738,6 +760,13 @@ export class PostFX {
     render(): void {
         if (this.composer) {
             this.composer.render();
+        }
+        // Restore camera position after rendering (undo shake offset)
+        if (this.lastCamera) {
+            this.lastCamera.position.x -= this.shakeAppliedX;
+            this.lastCamera.position.y -= this.shakeAppliedY;
+            this.shakeAppliedX = 0;
+            this.shakeAppliedY = 0;
         }
     }
 

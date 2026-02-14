@@ -1,5 +1,5 @@
 import { saveManager } from '../../data/SaveLoad';
-import { UNLOCKABLES } from '../../data/Progression';
+import { UNLOCKABLES, RARITY_COLORS, type Unlockable } from '../../data/Progression';
 import { escapeHtml, type Screen, type ScreenContext } from './ScreenInterface';
 
 export class LockerScreen implements Screen {
@@ -15,10 +15,11 @@ export class LockerScreen implements Screen {
         const unlockedIds = progression.unlockedCosmetics;
         const equipped = progression.equippedCosmetics;
 
-        const categories = [
+        const categories: { type: Unlockable['type']; label: string }[] = [
             { type: 'trail', label: 'Disc Trails' },
             { type: 'cosmetic', label: 'Jersey Accents' },
             { type: 'celebration', label: 'Celebrations' },
+            { type: 'disc_skin', label: 'Disc Skins' },
         ];
 
         let categoriesHtml = '';
@@ -38,9 +39,12 @@ export class LockerScreen implements Screen {
             items.forEach(item => {
                 const isUnlocked = unlockedIds.includes(item.id);
                 const isEquipped = equipped[cat.type] === item.id;
+                const rarityColor = RARITY_COLORS[item.rarity];
+                const rarityLabel = item.rarity.charAt(0).toUpperCase() + item.rarity.slice(1);
 
                 itemsHtml += `
-                    <div class="cosmetic-card ${isEquipped ? 'active' : ''} ${!isUnlocked ? 'locked' : ''}">
+                    <div class="cosmetic-card ${isEquipped ? 'active' : ''} ${!isUnlocked ? 'locked' : ''}" style="border-color: ${rarityColor}">
+                        <div class="cosmetic-rarity" style="color: ${rarityColor}; font-size: 0.7em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">${rarityLabel}</div>
                         <div class="cosmetic-name">${escapeHtml(item.name)}</div>
                         <div class="cosmetic-desc">${escapeHtml(item.description)}</div>
                         ${isUnlocked

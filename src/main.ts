@@ -11,6 +11,10 @@ import { Stadium } from './rendering/Stadium';
 import { ParticleSystem } from './rendering/Particles';
 import { SkySystem } from './rendering/Sky';
 import { PostFX } from './rendering/PostFX';
+import { PlayerHighlight } from './rendering/PlayerHighlight';
+import { ScreenShake, SHAKE_SCORE, SHAKE_BLOCK, SHAKE_CATCH, SHAKE_LAYOUT_CATCH, SHAKE_TURNOVER } from './rendering/ScreenShake';
+import { spawnGroundImpact, spawnBlockEffect, spawnCatchEffect, spawnScoreEffect } from './rendering/ImpactEffects';
+import { GameplaySFX } from './audio/GameplaySFX';
 import { DebugVisuals } from './debug/DebugVisuals';
 import {
     InputManager,
@@ -57,6 +61,7 @@ import { Minimap } from './ui/Minimap';
 import type { TimeOfDay, WeatherCondition } from './data/WeatherTypes';
 import { WEATHER_EFFECTS } from './data/WeatherTypes';
 import { TutorialSystem } from './ui/Tutorial';
+import { TutorialConditionBridge, type TutorialFrameState } from './ui/TutorialBridge';
 import { UNLOCKABLES } from './data/Progression';
 import { getPose } from './rendering/Animation';
 import { Random } from './data/SeededRandom';
@@ -108,6 +113,8 @@ import { ResourceTracker } from './core/ResourceTracker';
 import { MatchStats } from './systems/MatchStats';
 import { MatchAudio } from './systems/MatchAudio';
 import { BroadcastSync } from './systems/BroadcastSync';
+import { LoadingScreen } from './ui/LoadingScreen';
+import { ErrorBoundary } from './core/ErrorBoundary';
 
 const DEFAULT_LAN_RELAY_URL =
     window.location.hostname === 'localhost'
@@ -273,8 +280,17 @@ function createLanStatusBadge(): HTMLDivElement {
 };
 
 async function main() {
+    // Error boundary - install before anything else
+    const errorBoundary = new ErrorBoundary(document.body);
+    errorBoundary.install();
+
+    // Loading screen - show immediately
+    const loadingScreen = new LoadingScreen(document.body);
+    loadingScreen.setProgress(0, 'Loading physics engine...');
+
     await init({ module_or_path: wasmUrl });
-    
+    loadingScreen.setProgress(30, 'Initializing renderer...');
+
     ProgressionManager.checkDailyReset();
 
     // Menu container
@@ -342,6 +358,7 @@ async function main() {
         '/locker': 'locker',
         '/settings': 'settings',
         '/credits': 'credits',
+        '/challenge': 'challenge',
     };
 
     function applyRoute(): void {
@@ -425,6 +442,7 @@ async function main() {
     window.addEventListener('popstate', () => applyRoute());
 
     // ── Menu System ──
+    loadingScreen.setProgress(60, 'Loading assets...');
 
     const menuSystem = new MenuSystem(menuContainer, (state) => {
         if (state === 'none') {
@@ -453,9 +471,19 @@ async function main() {
             }
         }, 5000);
     };
+    // Main game instance (must be declared before applyRoute which may call startGame)
+    let gameInstance: {
+        cleanup: () => void;
+    } | null = null;
+
     // Apply initial route (may navigate to a menu screen or start a game)
+    loadingScreen.setProgress(90, 'Almost ready...');
     applyRoute();
     if (menuSystem.getState() === 'title') initBrowser();
+
+    // Loading complete
+    loadingScreen.setProgress(100, 'Ready!');
+    loadingScreen.destroy();
 
     window.addEventListener('refreshLobby', () => {
         browserClient?.listRooms();
@@ -509,11 +537,6 @@ async function main() {
             menuSystem.hide();
         }
     }
-
-    // Main game instance
-    let gameInstance: {
-        cleanup: () => void;
-    } | null = null;
 
     function stopGame(): void {
         if (gameLoopId !== null) {
@@ -600,6 +623,8 @@ async function main() {
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(renderer.domElement);
 
         // Scene setup
@@ -617,9 +642,23 @@ async function main() {
         // Lighting
         const sun = new THREE.DirectionalLight(0xffffff, 1.5);
         sun.position.set(30, 50, 20);
+        sun.castShadow = true;
+        sun.shadow.mapSize.width = 2048;
+        sun.shadow.mapSize.height = 2048;
+        sun.shadow.camera.left = -70;
+        sun.shadow.camera.right = 70;
+        sun.shadow.camera.top = 70;
+        sun.shadow.camera.bottom = -70;
+        sun.shadow.camera.near = 1;
+        sun.shadow.camera.far = 150;
+        sun.shadow.bias = -0.001;
+        sun.shadow.normalBias = 0.02;
         scene.add(sun);
         const ambient = new THREE.AmbientLight(0x404060, 0.8);
         scene.add(ambient);
+        const fillLight = new THREE.DirectionalLight(0x8899bb, 0.4);
+        fillLight.position.set(-20, 30, -15);
+        scene.add(fillLight);
 
         // Environment
         const sky = new SkySystem(scene, sun, ambient);
@@ -667,6 +706,8 @@ async function main() {
         const homeTeam = Team.create(homeTeamName, homeTeamColors.primary, homeTeamColors.secondary, 'home', scene);
         const awayTeam = Team.create(awayTeamName, awayTeamColors.primary, awayTeamColors.secondary, 'away', scene);
         const stadium = new Stadium(scene, homeTeamColors.primary);
+        const playerHighlight = new PlayerHighlight(homeTeamColors.primary);
+        scene.add(playerHighlight.getGroup());
         gameState.homeTeam.name = homeTeamName;
         gameState.homeTeam.primaryColor = homeTeamColors.primary;
         gameState.homeTeam.secondaryColor = homeTeamColors.secondary;
@@ -741,6 +782,7 @@ async function main() {
         const particles = new ParticleSystem(scene);
         const postFX = new PostFX();
         postFX.init(renderer, scene, gameCamera.camera);
+        const screenShake = new ScreenShake();
         const debugVisuals = new DebugVisuals();
 
         // Apply Cosmetics
@@ -818,6 +860,8 @@ async function main() {
         const crowdAudio = new CrowdAudio(audioCtx);
         const musicSystem = new MusicSystem(audioCtx);
         const vocalSynth = new VocalSynth(audioCtx);
+        const gameplaySFX = new GameplaySFX(audioCtx);
+        gameplaySFX.masterVolume = 0.25;
         let audioStarted = false;
 
         const startAudio = (e?: Event) => {
@@ -1149,6 +1193,7 @@ async function main() {
                   menuSystem.setState('title');
               })
             : null;
+        const tutorialBridge = tutorial ? new TutorialConditionBridge(tutorial, eventBus) : null;
         if (tutorial) {
             tutorial.start(1);
         }
@@ -1799,7 +1844,9 @@ async function main() {
                     applySpectatorCamera(frameDt);
                 }
                 postFX.update(rawDt, gameCamera.camera);
+                screenShake.applyToCamera(gameCamera.camera);
                 postFX.render();
+                screenShake.restoreCamera(gameCamera.camera);
                 debugVisuals.render(renderer, gameCamera.camera);
                 return;
             }
@@ -1827,7 +1874,9 @@ async function main() {
             postFX.update(rawDt, gameCamera.camera);
 
             if (!splitScreenEnabled || !hasAwayHuman) {
+                screenShake.applyToCamera(gameCamera.camera);
                 postFX.render();
+                screenShake.restoreCamera(gameCamera.camera);
                 debugVisuals.render(renderer, gameCamera.camera);
                 return;
             }
@@ -1835,10 +1884,12 @@ async function main() {
             renderer.setScissorTest(true);
 
             // Render Home side (PostFX not supported in split-screen currently)
+            screenShake.applyToCamera(gameCamera.camera);
             const left = primarySlot.viewport;
             renderer.setViewport(left.x, left.y, left.width, left.height);
             renderer.setScissor(left.x, left.y, left.width, left.height);
             renderer.render(scene, gameCamera.camera);
+            screenShake.restoreCamera(gameCamera.camera);
 
             // Render Away side
             if (gameCameraP2) {
@@ -1884,6 +1935,12 @@ async function main() {
 
             if (currentMode === 'highlights_reel') {
                 highlightPlayer.update(frameDt);
+                // Apply remote poses to stickman meshes
+                for (const p of allPlayers) {
+                    p.update(frameDt, null);
+                }
+                disc.update(frameDt);
+                particles.update(frameDt);
                 renderFrame(rawDt, frameDt);
                 return;
             }
@@ -2176,11 +2233,20 @@ async function main() {
                     vocalSynth.announceTurnover();
                     vocalSynth.blowWhistle('short');
                     postFX.triggerBlockShake();
+                    screenShake.shakePreset(SHAKE_TURNOVER);
+                    spawnGroundImpact(particles, disc.position.clone());
+                    gameplaySFX.playTurnover();
                     audio.stopDiscHum();
                 }
                 if (match.phase !== prevPhase) {
                     eventBus.emit('phase_change', { from: prevPhase, to: match.phase });
                     replayRecorder.recordPhaseChange(prevPhase, match.phase, [...match.score] as [number, number]);
+                    // Reset expressions on new point/play start
+                    if (match.phase === 'pre_pull' || match.phase === 'live_play') {
+                        for (const p of allPlayers) {
+                            p.stickman.setExpression('neutral');
+                        }
+                    }
                 }
                 prevPhase = match.phase;
 
@@ -2209,6 +2275,10 @@ async function main() {
                     trajectoryPreview.setVisible(false);
                 }
                 prevOffenseTeam = match.offenseTeam;
+                // Update highlight color based on primary slot team
+                playerHighlight.setColor(
+                    primarySlot.team === 'home' ? homeTeamColors.primary : awayTeamColors.primary,
+                );
             }
 
             // Spirit system update
@@ -2276,6 +2346,11 @@ async function main() {
                             if (d < nearestDist) { nearestDist = d; nearestOpp = opp; }
                         }
                         spiritSystem.playerCallFoul(caller, nearestOpp);
+                        eventBus.emit('foul_called', {
+                            callerId: caller.id,
+                            team: caller.team,
+                            contested: false,
+                        });
                     }
                 }
             }
@@ -2293,9 +2368,13 @@ async function main() {
                     scorerName: match.lastScorer?.playerName ?? '',
                 });
                 postFX.triggerScoreEffect();
+                screenShake.shakePreset(SHAKE_SCORE);
                 gameCamera.triggerCrashZoom();
                 particles.emitScoreCelebration(disc.position);
+                spawnScoreEffect(particles, disc.position.clone(),
+                    scoringTeam === 'home' ? homeTeamColors.primary : awayTeamColors.primary);
                 audio.playScoreJingle();
+                gameplaySFX.playScore();
                 audio.stopDiscHum();
                 setTimeout(() => audio.playDiscSpike(), 300);
                 setTimeout(() => audio.playTeamCheer(), 500);
@@ -2336,8 +2415,10 @@ async function main() {
                 for (const p of allPlayers) {
                     if (p.team === scoringTeam) {
                         p.celebrate();
+                        p.stickman.setExpression('happy');
                     } else {
                         p.frustrate();
+                        p.stickman.setExpression('frustrated');
                     }
                 }
             }
@@ -2560,13 +2641,22 @@ async function main() {
                                 trajectoryPreview.setVisible(false);
                             }
                             audio.playThrowSound(throwParams.speed, slot.throwCtrl.currentThrowType);
+                            gameplaySFX.playThrow(slot.throwCtrl.power, slot.throwCtrl.currentThrowType);
                             replayRecorder.recordThrow(
                                 controlledPlayer.id,
                                 controlledPlayer.team,
                                 throwParams,
                             );
+                            eventBus.emit('disc_throw', {
+                                throwerId: controlledPlayer.id,
+                                team: controlledPlayer.team,
+                                params: throwParams,
+                                estimatedDistance: estimateThrowDistanceMeters(
+                                    throwParams.speed,
+                                    throwParams.direction.y,
+                                ),
+                            });
                             if (slot === primarySlot) {
-                                tutorial?.checkCondition('disc_thrown');
                                 onboarding?.check('throw');
                             }
                         }
@@ -2597,26 +2687,23 @@ async function main() {
             }
         }
 
-            // Tutorial condition checks
+            // Tutorial condition checks (delegated to TutorialBridge)
             const primaryControlled = primarySlot.switching.controlledPlayer;
-            if (tutorial?.isActive()) {
+            if (tutorialBridge) {
                 const rawMove = primarySlot.input.getMovementDir();
-                if (Math.abs(rawMove.x) > 0.1 || Math.abs(rawMove.z) > 0.1) {
-                    tutorial.checkCondition('player_moved');
-                }
-                if (primarySlot.input.isSprinting() && (Math.abs(rawMove.x) > 0.1 || Math.abs(rawMove.z) > 0.1)) {
-                    tutorial.checkCondition('player_sprinted');
-                }
-                if (primarySlot.throwCtrl.charging) {
-                    tutorial.checkCondition('throw_charged');
-                }
-                if (primaryControlled?.holdingDisc) {
-                    tutorial.checkCondition('disc_picked_up');
-                }
-                if (homeScored || awayScored) {
-                    tutorial.checkCondition('point_scored');
-                    tutorial.checkCondition('tutorial_completed');
-                }
+                const bridgeState: TutorialFrameState = {
+                    movementDir: rawMove,
+                    isSprinting: primarySlot.input.isSprinting(),
+                    isCharging: primarySlot.throwCtrl.charging,
+                    holdingDisc: !!primaryControlled?.holdingDisc,
+                    stamina: primaryControlled?.movement.stamina ?? 100,
+                    maxStamina: 100,
+                    hyzerAccum: primarySlot.throwCtrl.hyzer,
+                    throwType: primarySlot.throwCtrl.currentThrowType,
+                    isPreviewVisible: primarySlot.throwCtrl.charging,
+                    scored: homeScored || awayScored,
+                };
+                tutorialBridge.update(frameDt, bridgeState);
             }
             if (onboarding?.isActive()) {
                 const rawMove = primarySlot.input.getMovementDir();
@@ -2778,7 +2865,14 @@ async function main() {
                 audio.updateDiscHum(disc.velocity.length());
             }
 
+            const discStateBeforeUpdate = disc.state;
             disc.update(frameDt);
+
+            // Disc ground impact effect (in_flight -> on_ground transition)
+            if (discStateBeforeUpdate === 'in_flight' && disc.state === 'on_ground') {
+                spawnGroundImpact(particles, disc.position.clone());
+                gameplaySFX.playGroundHit();
+            }
 
             // Catch detection
             if (disc.state === 'in_flight' || disc.state === 'on_ground') {
@@ -2816,9 +2910,11 @@ async function main() {
                             result.catcher.team,
                             { x: disc.position.x, y: disc.position.y, z: disc.position.z },
                         );
-
-                        // Tutorial condition: disc caught
-                        tutorial?.checkCondition('disc_caught');
+                        eventBus.emit('disc_catch', {
+                            catcherId: result.catcher.id,
+                            team: result.catcher.team,
+                            position: { x: disc.position.x, y: disc.position.y, z: disc.position.z },
+                        });
                         onboarding?.check('catch_or_switch');
 
                         if (wasInFlight && thrownBy && !result.isInterception) {
@@ -2836,9 +2932,15 @@ async function main() {
 
                         if (result.catchQuality === 'contested') {
                             postFX.triggerSmallShake();
+                            screenShake.shakePreset(SHAKE_CATCH);
                         }
 
                         if (result.isInterception) {
+                            // Shocked expression on throwing team
+                            const throwingTeamObj = thrownBy === 'home' ? homeTeam : awayTeam;
+                            for (const p of throwingTeamObj.players) {
+                                p.stickman.setExpression('shocked');
+                            }
                             registerMomentum(result.catcher.team, 0.95);
                             const playerName =
                                 result.catcher.stats?.fullName ??
@@ -2860,6 +2962,9 @@ async function main() {
                             );
                             crowdAudio.reactToBlock();
                             stadium.triggerCheer(0.5);
+                            screenShake.shakePreset(SHAKE_BLOCK);
+                            spawnBlockEffect(particles, disc.position.clone());
+                            gameplaySFX.playBlock();
                             if (thrownBy) {
                                 const turnoverThrower = lastThrowerByTeam[thrownBy];
                                 if (turnoverThrower) {
@@ -2909,10 +3014,14 @@ async function main() {
                             disc.position,
                             result.catcher.team === 'home' ? TEAM_A_PRIMARY : TEAM_B_PRIMARY,
                         );
+                        spawnCatchEffect(particles, disc.position.clone(),
+                            result.catcher.team === 'home' ? homeTeamColors.primary : awayTeamColors.primary);
+                        gameplaySFX.playCatch();
 
                         // Layout catch effects
                         if (result.isLayout) {
                             postFX.triggerLayoutEffect();
+                            screenShake.shakePreset(SHAKE_LAYOUT_CATCH);
                             crowdAudio.reactToLayout();
                         }
                     }
@@ -2964,9 +3073,7 @@ async function main() {
 
             // Rain particles for weather
             if (weatherCondition === 'rain') {
-                for (let i = 0; i < 3; i++) {
-                    particles.emitRainDrop(FIELD_WIDTH, FIELD_LENGTH);
-                }
+                particles.emitRainDrop(FIELD_WIDTH, FIELD_LENGTH, 8);
             }
 
             // Wind dust from strong gusts
@@ -2987,6 +3094,33 @@ async function main() {
             grass.update(frameDt, effectiveWindSpeed, effectiveWindDir);
             audio.updateWindAudio(effectiveWindSpeed);
             particles.update(frameDt);
+
+            // Player highlight on controlled player
+            const highlightTarget = primarySlot.switching.controlledPlayer;
+            if (highlightTarget && !isSpectator) {
+                playerHighlight.setVisible(true);
+                playerHighlight.update(frameDt, highlightTarget.movement.position);
+                playerHighlight.billboardArrow(gameCamera.camera);
+            } else {
+                playerHighlight.setVisible(false);
+            }
+
+            // Stickman look direction: all players look at disc when in flight
+            if (disc.state === 'in_flight') {
+                for (const p of allPlayers) {
+                    const dx = disc.position.x - p.movement.position.x;
+                    const dy = disc.position.y - 1.5;
+                    const dz = disc.position.z - p.movement.position.z;
+                    p.stickman.setLookDirection(dx, dy, dz);
+                }
+            } else {
+                for (const p of allPlayers) {
+                    p.stickman.setLookDirection(0, 0, 0);
+                }
+            }
+
+            // Screen shake
+            screenShake.update(frameDt);
 
             // Footstep audio for controlled player
             const ctrlPlayer = primarySlot.switching.controlledPlayer;
@@ -3042,9 +3176,12 @@ async function main() {
                 musicSystem.stop();
                 minimap.dispose();
                 fieldFlags.dispose();
+                tutorialBridge?.destroy();
                 tutorial?.stop();
                 onboarding?.destroy();
                 replayRecorder.stop();
+                playerHighlight.dispose();
+                screenShake.reset();
                 disposeSceneResources(scene);
                 renderer.dispose();
                 if (renderer.domElement.parentNode === document.body) {

@@ -146,9 +146,14 @@ export function decideOffenseWithDisc(
         const bailoutBonus = stallCount >= 8 ? 0.18 : 0;
 
         // Read quality scales how much openness matters vs noise
-        const opennessWeight = 0.35 + readQualityMod * 0.15;
+        const opennessWeight = 0.45 + readQualityMod * 0.15;
         const noiseScale = Math.max(0, 0.12 * (1 - readQualityMod));
         const readNoise = (Random.next() - 0.5) * noiseScale;
+
+        // Penalise long throws to covered receivers more heavily
+        const coveragePenalty = openness < 0.5 && dist > 20
+            ? (1 - openness) * (dist - 20) / 30 * 0.3
+            : 0;
 
         const score =
             openness * opennessWeight +
@@ -159,7 +164,8 @@ export function decideOffenseWithDisc(
             bailoutBonus -
             difficultyPenalty * 0.22 -
             windPenalty * 0.12 -
-            pressurePenalty +
+            pressurePenalty -
+            coveragePenalty +
             readNoise;
 
         if (evalBuffer) {
@@ -187,16 +193,22 @@ export function decideOffenseWithDisc(
     const baseThreshold =
         stallCount < 3 ? 0.08 : stallCount < 5 ? -0.05 : stallCount < 7 ? -0.2 : -0.5;
     const threshold = baseThreshold - throwBias * 0.12 - (scaling?.decisionThreshold ?? 0.08) * 0.5;
+    // At stall 8+ still prefer a dump/reset over a wild huck into coverage
     if (!bestReceiver || (bestScore < threshold && stallCount < 8)) {
         return { type: 'none' };
+    }
+    if (stallCount >= 8 && bestOpenness < 0.15 && bestScore < -0.3) {
+        return { type: 'none' }; // Stall out rather than guaranteed turnover
     }
 
     const dist = player.movement.position.distanceTo(
         bestReceiver.movement.position,
     );
+    // Speed scales with distance but with diminishing returns past 20m
+    const distFactor = dist <= 20 ? dist * 0.45 : 9 + (dist - 20) * 0.25;
     const speed = Math.max(
         10,
-        Math.min(28, 8 + dist * 0.48 + bestOpenness * 0.6 + bestScore * 0.4),
+        Math.min(26, 8 + distFactor + bestOpenness * 0.5 + bestScore * 0.3),
     );
 
     const leadTarget = computeLeadPass(player, bestReceiver, speed);

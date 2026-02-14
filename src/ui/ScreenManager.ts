@@ -15,6 +15,8 @@ import { CreditsScreen } from './screens/CreditsScreen';
 import { PracticeScreen } from './screens/PracticeScreen';
 import { LockerScreen } from './screens/LockerScreen';
 import { PauseScreen } from './screens/PauseScreen';
+import { ChallengeScreen } from './screens/ChallengeScreen';
+import { ReplayBrowserScreen } from './screens/ReplayBrowserScreen';
 
 export type { MenuState, QuickMatchConfig };
 export type { Screen };
@@ -42,6 +44,8 @@ export class ScreenManager {
     private creditsScreen: CreditsScreen | null = null;
     private practiceScreen: PracticeScreen | null = null;
     private lockerScreen: LockerScreen | null = null;
+    private challengeScreen: ChallengeScreen | null = null;
+    private replayBrowserScreen: ReplayBrowserScreen | null = null;
     private pauseScreen: PauseScreen | null = null;
 
     private pauseCallbacks: { onResume: () => void; onQuit: () => void } | null = null;
@@ -74,6 +78,8 @@ export class ScreenManager {
                         '/credits': 'credits',
                         '/practice': 'practice_menu',
                         '/locker': 'locker',
+                        '/challenge': 'challenge',
+                        '/replays': 'replay_browser',
                     };
                     const mapped = stateMap[path];
                     if (mapped) {
@@ -200,6 +206,12 @@ export class ScreenManager {
             case 'locker':
                 if (!this.lockerScreen) this.lockerScreen = new LockerScreen(this.ctx);
                 return this.lockerScreen;
+            case 'challenge':
+                if (!this.challengeScreen) this.challengeScreen = new ChallengeScreen(this.ctx);
+                return this.challengeScreen;
+            case 'replay_browser':
+                if (!this.replayBrowserScreen) this.replayBrowserScreen = new ReplayBrowserScreen(this.ctx);
+                return this.replayBrowserScreen;
             case 'paused': {
                 const resume = this.pauseCallbacks?.onResume || (() => {});
                 const quit = this.pauseCallbacks?.onQuit || (() => {});

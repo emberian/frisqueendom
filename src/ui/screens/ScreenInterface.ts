@@ -8,6 +8,8 @@ export type MenuState =
     | 'credits'
     | 'practice_menu'
     | 'locker'
+    | 'challenge'
+    | 'replay_browser'
     | 'paused'
     | 'none';
 

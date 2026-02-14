@@ -434,6 +434,7 @@ export function forehandThrowPose(
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -479,6 +480,7 @@ export function catchPose(discDirX: number, discDirZ: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -508,6 +510,7 @@ export function markingPose(time: number, intensity: number = 0): Float32Array {
     setJoint(out, 11, P.kneeX + 0.05 + shuffle, P.kneeY + 0.1 - crouch, 0.05 - lunge * 0.1);
     setJoint(out, 12, P.ankleX + 0.05 + shuffle, P.ankleY + 0.05, -lunge * 0.15);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -530,6 +533,7 @@ export function celebrationPose(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY + jump, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -578,7 +582,8 @@ export function layoutPose(progress: number): Float32Array {
     setJoint(out, 10, -P.ankleX, P.ankleY + diveHeight * 0.3, -legTrail * 1.5);
     setJoint(out, 11, P.kneeX, P.kneeY + diveHeight * 0.5, -legTrail);
     setJoint(out, 12, P.ankleX, P.ankleY + diveHeight * 0.3, -legTrail * 1.5);
-    
+
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -603,7 +608,8 @@ export function frustrationPose(time: number): Float32Array {
     setJoint(out, 10, -P.ankleX, P.ankleY, 0);
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
-    
+
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -644,7 +650,8 @@ function hammerThrowPose(time: number): Float32Array {
     setJoint(out, 10, -P.ankleX, P.ankleY, -0.08);
     setJoint(out, 11, P.kneeX, P.kneeY, 0.05);
     setJoint(out, 12, P.ankleX, P.ankleY, 0.08);
-    
+
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -670,6 +677,7 @@ export function celebrationFistPump(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY + jump, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -713,6 +721,7 @@ export function celebrationSpike(time: number): Float32Array {
         setJoint(out, 12, P.ankleX, P.ankleY, 0);
     }
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -736,6 +745,7 @@ export function frustrationArmsUp(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -759,6 +769,7 @@ export function frustrationHeadDrop(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY - walkPhase, -walkPhase * 2);
     setJoint(out, 12, P.ankleX, P.ankleY, -walkPhase * 3);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -827,6 +838,7 @@ export function celebrationBackflip(time: number): Float32Array {
         setJoint(out, 12, P.ankleX, P.ankleY, 0);
     }
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -867,7 +879,8 @@ function scooberThrowPose(time: number): Float32Array {
     setJoint(out, 10, -P.ankleX, P.ankleY, 0);
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
-    
+
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -895,6 +908,7 @@ export function celebrationFingerGuns(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -918,6 +932,7 @@ export function celebrationHeadNod(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -940,6 +955,7 @@ export function celebrationQuickPump(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -963,6 +979,7 @@ export function celebrationFlex(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -988,6 +1005,7 @@ export function celebrationComeOn(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, -0.03);
     setJoint(out, 12, P.ankleX, P.ankleY, -0.05);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -1032,6 +1050,7 @@ export function celebrationKneeSlide(time: number): Float32Array {
         setJoint(out, 12, P.ankleX, P.ankleY + drop * 0.3, -0.1);
     }
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -1056,6 +1075,7 @@ export function celebrationHuddle(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY + jump, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -1163,6 +1183,7 @@ export function frustrationDrop(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY + 0.08 * dropSpeed, 0.05);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -1203,6 +1224,7 @@ export function frustrationTurnover(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -1228,6 +1250,7 @@ export function frustrationScored(time: number): Float32Array {
     setJoint(out, 11, P.kneeX, P.kneeY, 0);
     setJoint(out, 12, P.ankleX, P.ankleY, 0);
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -1272,6 +1295,7 @@ export function frustrationMissLayout(time: number): Float32Array {
         setJoint(out, 12, P.ankleX, P.ankleY * (0.7 + rise * 0.3), 0);
     }
 
+    setNewJointDefaults(out);
     return out;
 }
 
@@ -1623,6 +1647,7 @@ export function markingStance(time: number, intensity: number): Float32Array {
     setJoint(out, 11, P.kneeX + stanceWidth + shuffle, P.kneeY + 0.08 + crouch * 0.3, forwardLean * 0.3 - legShuffle);
     setJoint(out, 12, P.ankleX + stanceWidth + shuffle, P.ankleY + 0.03, -legShuffle * 1.5);
 
+    setNewJointDefaults(out);
     return out;
 }
 
