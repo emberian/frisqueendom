@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DiscBridge } from '../physics/DiscBridge';
-import { createDiscMesh, updateDiscMesh } from '../rendering/DiscRenderer';
+import { createDiscMesh, updateDiscMesh, setDiscTeamColor } from '../rendering/DiscRenderer';
 import type { DiscLifecycle, ThrowParams } from '../data/Types';
 import type { DiscSimulator } from '../../frisque-physics/pkg/frisque_physics.js';
 import type { Player } from './Player';
@@ -161,6 +161,10 @@ export class Disc {
             this.velocity.set(0, 0, 0);
             this.hasSkipped = false;
         }
+    }
+
+    setTeamColor(primary: number, secondary: number): void {
+        setDiscTeamColor(this.mesh, primary, secondary);
     }
 
     resetToPosition(pos: THREE.Vector3): void {

@@ -102,14 +102,12 @@ import {
 } from './data/Constants';
 import { THROW_CONFIGS } from './data/GameplayConstants';
 import type { TeamSide, OffenseFormation, DefenseFormation } from './data/Types';
-
-type GameMode =
-    | 'menu'
-    | 'practice'
-    | 'quick_match'
-    | 'career_match'
-    | 'spectator_match'
-    | 'highlights_reel';
+import { GameState, type GameMode } from './core/GameState';
+import { EventBus } from './core/EventBus';
+import { ResourceTracker } from './core/ResourceTracker';
+import { MatchStats } from './systems/MatchStats';
+import { MatchAudio } from './systems/MatchAudio';
+import { BroadcastSync } from './systems/BroadcastSync';
 
 const DEFAULT_LAN_RELAY_URL =
     window.location.hostname === 'localhost'
@@ -281,15 +279,17 @@ async function main() {
 
     // Menu container
     const menuContainer = document.getElementById('menu-container')!;
-    
-    // Game state
+
+    // Core state
+    const gameState = new GameState();
+    const eventBus = new EventBus();
     let currentMode: GameMode = 'menu';
     let isPaused = false;
     let gameLoopId: number | null = null;
-    
+
     // Career manager
     let careerManager: CareerManager | null = null;
-    
+
     // Spirit system
     const spiritSystem = new SpiritSystem();
 
@@ -524,10 +524,15 @@ async function main() {
         gameInstance = null;
         currentMode = 'menu';
         isPaused = false;
+        gameState.reset();
+        eventBus.clear();
         setHash('/title');
     }
 
     function startGame(matchConfig?: QuickMatchConfig, tutorialMode?: boolean): void {
+        gameState.setMode(currentMode);
+        gameState.isSpectator = currentMode === 'spectator_match';
+        gameState.isCareerMatch = currentMode === 'career_match';
         const careerEvent =
             currentMode === 'career_match' && careerManager
                 ? careerManager.getCurrentEvent()
@@ -662,6 +667,12 @@ async function main() {
         const homeTeam = Team.create(homeTeamName, homeTeamColors.primary, homeTeamColors.secondary, 'home', scene);
         const awayTeam = Team.create(awayTeamName, awayTeamColors.primary, awayTeamColors.secondary, 'away', scene);
         const stadium = new Stadium(scene, homeTeamColors.primary);
+        gameState.homeTeam.name = homeTeamName;
+        gameState.homeTeam.primaryColor = homeTeamColors.primary;
+        gameState.homeTeam.secondaryColor = homeTeamColors.secondary;
+        gameState.awayTeam.name = awayTeamName;
+        gameState.awayTeam.primaryColor = awayTeamColors.primary;
+        gameState.awayTeam.secondaryColor = awayTeamColors.secondary;
         
         const careerLineupUsage = new Set<string>();
         const applyCareerLineupToHome = (isReceiving: boolean): void => {
@@ -773,6 +784,21 @@ async function main() {
         const weatherCondition = (matchConfig?.weather ?? 'clear') as WeatherCondition;
         const weatherEffects = WEATHER_EFFECTS[weatherCondition];
         sky.applyPreset(timeOfDay);
+
+        // Wire post-processing to time of day
+        const godRayTimes = ['morning', 'golden_hour', 'sunset'];
+        postFX.setGodRaysEnabled(godRayTimes.includes(timeOfDay));
+        postFX.setColorGrading(timeOfDay);
+        // Night gets heavier grain, clear day gets less
+        postFX.setGrainIntensity(timeOfDay === 'night' ? 0.06 : 0.03);
+
+        gameState.environment = {
+            timeOfDay,
+            weather: weatherCondition,
+            venue: 'park',
+            windSpeed,
+            windDirection: windDir,
+        };
 
         // Wind gusts
         const gustSystem = new GustSystem();
@@ -1241,6 +1267,8 @@ async function main() {
             controllerSlots,
             discSim,
             spiritSystem,
+            gameState,
+            eventBus,
         };
 
         // Game loop variables
@@ -1249,8 +1277,6 @@ async function main() {
         let physicsAccumulator = 0;
         let trailTimer = 0;
         let autoPullTimer = 0;
-        let broadcastStateTimer = 0;
-        let metadataTimer = 0;
         let snapshotTimer = 0;
         let prevScore = [0, 0];
         let prevOffenseTeam = match.offenseTeam;
@@ -1290,6 +1316,28 @@ async function main() {
             timestamp: number;
         }> = [];
         const matchStartTime = performance.now();
+
+        // ── V2 Systems (Phase 0.2/0.3) ──
+        // These systems run alongside the existing code. Over time,
+        // the inline stat/audio/broadcast logic will be removed in
+        // favor of these.
+        const matchStatsSystem = new MatchStats(matchStartTime);
+        const matchAudioSystem = new MatchAudio(eventBus, {
+            audio,
+            crowdAudio,
+            vocalSynth,
+            stadium,
+            postFX,
+        });
+        const broadcastSyncSystem = lanClient && !lanSpectatorMode
+            ? new BroadcastSync({
+                  lanClient,
+                  isSpectator: lanSpectatorMode,
+                  multiplayerMode,
+                  matchSeed,
+              })
+            : null;
+
         const performanceMap = new Map<
             string,
             {
@@ -1402,6 +1450,8 @@ async function main() {
                 text,
                 playerId,
             });
+            // Mirror to V2 system
+            matchStatsSystem.recordEvent(type, text, playerId);
         }
 
         function getPlayerLine(team: TeamSide, playerId: string): PlayerLiveStatLine {
@@ -1446,6 +1496,8 @@ async function main() {
             if (lastPass && lastPass.receiverId === playerId) {
                 getPlayerLine(team, lastPass.throwerId).assists += 1;
             }
+            // Mirror to V2 system
+            matchStatsSystem.addGoal(playerId, playerName, teamName, team);
         }
 
         function addBlock(
@@ -1465,6 +1517,8 @@ async function main() {
             performanceMap.set(playerId, perf);
 
             getPlayerLine(team, playerId).blocks += 1;
+            // Mirror to V2 system
+            matchStatsSystem.addBlock(playerId, playerName, teamName, team);
         }
 
         function registerThrowAttempt(
@@ -1480,6 +1534,8 @@ async function main() {
             getPlayerLine(team, throwerId).attempts += 1;
             lastThrowerByTeam[team] = throwerId;
             dropTurnoverTeam[team] = false;
+            // Mirror to V2 system
+            matchStatsSystem.registerThrowAttempt(team, throwerId, estimatedDistance);
         }
 
         function registerMomentum(team: TeamSide, weight: number): void {
@@ -1491,6 +1547,8 @@ async function main() {
             if (momentumEvents.length > 120) {
                 momentumEvents.shift();
             }
+            // Mirror to V2 system
+            matchStatsSystem.registerMomentum(team, weight);
         }
 
         function buildHalftimeSummary(): HalftimeSummary {
@@ -1758,8 +1816,16 @@ async function main() {
                 gameCameraP2.update(frameDt, awayTargets);
             }
 
+            // Project sun position to screen space for god rays
+            const sunWorldPos = sun.position.clone();
+            sunWorldPos.project(gameCamera.camera);
+            postFX.setSunScreenPosition(
+                sunWorldPos.x * 0.5 + 0.5,
+                sunWorldPos.y * 0.5 + 0.5,
+            );
+
             postFX.update(rawDt, gameCamera.camera);
-            
+
             if (!splitScreenEnabled || !hasAwayHuman) {
                 postFX.render();
                 debugVisuals.render(renderer, gameCamera.camera);
@@ -1978,6 +2044,15 @@ async function main() {
             hud.updateScore(match.score[0], match.score[1]);
             hud.showStateText(match.statusText, match.statusTextActive);
 
+            // Sync core game state
+            gameState.match.phase = match.phase;
+            gameState.match.score = [...match.score] as [number, number];
+            gameState.match.offenseTeam = match.offenseTeam;
+            gameState.match.stallCount = match.point.stallCount;
+            gameState.disc.state = disc.state;
+            gameState.disc.holderId = disc.holder?.id ?? null;
+            gameState.matchElapsedSeconds = (performance.now() - matchStartTime) / 1000;
+
             const maxScore = Math.max(match.score[0], match.score[1]);
             const scoreDiff = Math.abs(match.score[0] - match.score[1]);
             const lateGamePressure =
@@ -2084,6 +2159,11 @@ async function main() {
                         stallTurnoversByTeam[prevOffenseTeam] += 1;
                     }
                     registerMomentum(match.offenseTeam, 0.7);
+                    eventBus.emit('turnover', {
+                        reason: match.point.turnoverReason,
+                        team: prevOffenseTeam,
+                        position: { x: disc.position.x, z: disc.position.z },
+                    });
                     recordEvent(
                         'turnover',
                         `Turnover: ${prettyTurnoverReason(match.point.turnoverReason)}`,
@@ -2099,6 +2179,7 @@ async function main() {
                     audio.stopDiscHum();
                 }
                 if (match.phase !== prevPhase) {
+                    eventBus.emit('phase_change', { from: prevPhase, to: match.phase });
                     replayRecorder.recordPhaseChange(prevPhase, match.phase, [...match.score] as [number, number]);
                 }
                 prevPhase = match.phase;
@@ -2136,51 +2217,16 @@ async function main() {
             }
             hud.updateSpirit(spiritSystem.getPlayerTeamSpirit().total);
 
-            // Broadcasting state from host
-            if (lanClient && !lanSpectatorMode) {
-                broadcastStateTimer += frameDt;
-                if (broadcastStateTimer > 0.0166) { // 60Hz broadcast
-                    broadcastStateTimer = 0;
-                    lanClient.broadcastState({
-                        timestamp: performance.now(),
-                        disc: {
-                            pos: { x: disc.position.x, y: disc.position.y, z: disc.position.z },
-                            vel: { x: disc.velocity.x, y: disc.velocity.y, z: disc.velocity.z },
-                            state: disc.state,
-                        },
-                        players: allPlayers.map(p => ({
-                            id: p.id,
-                            pos: { x: p.movement.position.x, z: p.movement.position.z },
-                            facing: p.movement.facing,
-                            anim: p.getAnimState(),
-                            animTime: p.getAnimTimer(),
-                            holding: p.holdingDisc,
-                            marking: p.isMarking,
-                            markPct: p.markStallIntensity,
-                            accent: (p.stickman as any).accentMesh ? '#' + (p.stickman as any).accentMesh.material.color.getHex().toString(16).padStart(6, '0') : null,
-                        })),
-                        score: [...match.score] as [number, number],
-                        stall: match.point.stallCount,
-                        phase: match.phase,
-                        offenseTeam: match.offenseTeam,
-                        statusText: match.statusText,
-                        statusTextActive: match.statusTextActive,
-                        randomSeed: matchSeed,
-                    });
-                }
-
-                metadataTimer += frameDt;
-                if (metadataTimer > 2.0) { // 0.5Hz metadata
-                    metadataTimer = 0;
-                    lanClient.updateMetadata({
-                        homeName: homeTeam.name,
-                        awayName: awayTeam.name,
-                        homeScore: match.score[0],
-                        awayScore: match.score[1],
-                        phase: match.phase,
-                        joinable: multiplayerMode !== 'single'
-                    });
-                }
+            // Broadcasting state from host (V2: delegated to BroadcastSync)
+            if (broadcastSyncSystem) {
+                broadcastSyncSystem.update(
+                    frameDt,
+                    match,
+                    disc,
+                    allPlayers,
+                    homeTeam.name,
+                    awayTeam.name,
+                );
             }
 
             // Replay Snapshot Recording
@@ -2238,10 +2284,16 @@ async function main() {
             const homeScored = match.score[0] > prevScore[0];
             const awayScored = match.score[1] > prevScore[1];
             if (homeScored || awayScored) {
-                const scoringTeam = homeScored ? 'home' : 'away';
+                const scoringTeam: TeamSide = homeScored ? 'home' : 'away';
                 registerMomentum(scoringTeam, 1.25);
                 prevScore = [...match.score];
+                eventBus.emit('score', {
+                    team: scoringTeam,
+                    scorerId: match.lastScorer?.playerId ?? '',
+                    scorerName: match.lastScorer?.playerName ?? '',
+                });
                 postFX.triggerScoreEffect();
+                gameCamera.triggerCrashZoom();
                 particles.emitScoreCelebration(disc.position);
                 audio.playScoreJingle();
                 audio.stopDiscHum();
@@ -2295,6 +2347,11 @@ async function main() {
                 (match.score[0] >= match.getGameTo() || match.score[1] >= match.getGameTo())
             ) {
                 matchEnded = true;
+                const winner: TeamSide = match.score[0] >= match.getGameTo() ? 'home' : 'away';
+                eventBus.emit('match_end', {
+                    winner,
+                    score: [...match.score] as [number, number],
+                });
                 crowdAudio.reactToScore();
                 stadium.triggerCheer(3.0);
                 vocalSynth.announceGameOver();
@@ -2488,9 +2545,13 @@ async function main() {
                             );
                             registerMomentum(controlledPlayer.team, 0.5);
                             disc.throwDisc(throwParams, controlledPlayer.team);
+                            disc.setTeamColor(
+                                controlledPlayer.team === 'home' ? homeTeamColors.primary : awayTeamColors.primary,
+                                controlledPlayer.team === 'home' ? homeTeamColors.secondary : awayTeamColors.secondary,
+                            );
                             audio.startDiscHum();
                             discTrail.setTeamColor(
-                                controlledPlayer.team === 'home' ? TEAM_A_PRIMARY : TEAM_B_PRIMARY,
+                                controlledPlayer.team === 'home' ? homeTeamColors.primary : awayTeamColors.primary,
                             );
                             controlledPlayer.startThrow(slot.throwCtrl.currentThrowType);
                             slot.throwCtrl.reset();
@@ -2627,8 +2688,9 @@ async function main() {
                         homeThrow.isForehand ? 'forehand' : 'backhand',
                     );
                     disc.throwDisc(homeThrow, 'home');
+                    disc.setTeamColor(homeTeamColors.primary, homeTeamColors.secondary);
                     audio.startDiscHum();
-                    discTrail.setTeamColor(TEAM_A_PRIMARY);
+                    discTrail.setTeamColor(homeTeamColors.primary);
                     audio.playThrowSound(homeThrow.speed, homeThrow.isForehand ? 'forehand' : 'backhand');
                 }
                 const awayThrower = disc.holder;
@@ -2646,8 +2708,9 @@ async function main() {
                         awayThrow.isForehand ? 'forehand' : 'backhand',
                     );
                     disc.throwDisc(awayThrow, 'away');
+                    disc.setTeamColor(awayTeamColors.primary, awayTeamColors.secondary);
                     audio.startDiscHum();
-                    discTrail.setTeamColor(TEAM_B_PRIMARY);
+                    discTrail.setTeamColor(awayTeamColors.primary);
                     audio.playThrowSound(awayThrow.speed, awayThrow.isForehand ? 'forehand' : 'backhand');
                 }
             }
@@ -2966,6 +3029,8 @@ async function main() {
                 for (const slot of controllerSlots) {
                     if ('destroy' in slot.input) (slot.input as any).destroy();
                 }
+                matchAudioSystem.destroy();
+                broadcastSyncSystem?.destroy();
                 lanClient?.destroy();
                 lanStatusBadge?.remove();
                 if (spectatorHalftimeAutoTimer !== null) {

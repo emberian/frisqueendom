@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { SKY_PRESETS, type SkyConfig, type TimeOfDay } from '../data/WeatherTypes';
 import { FIELD_LENGTH } from '../data/Constants';
+import { CloudLayer } from './CloudLayer';
+
+const STAR_COUNT = 2000;
 
 export class SkySystem {
     private scene: THREE.Scene;
@@ -10,6 +13,9 @@ export class SkySystem {
     private ambientLight: THREE.AmbientLight;
     private hemiLight: THREE.HemisphereLight;
     private stadiumLights: THREE.DirectionalLight[] = [];
+    private starField: THREE.Points | null = null;
+    private moonSprite: THREE.Sprite | null = null;
+    readonly cloudLayer: CloudLayer;
 
     constructor(
         scene: THREE.Scene,
@@ -96,6 +102,95 @@ export class SkySystem {
         this.sunSprite.scale.set(30, 30, 1);
         this.sunSprite.position.set(30, 50, 20);
         scene.add(this.sunSprite);
+
+        // Stars — scattered on upper hemisphere
+        this.starField = this.createStarField();
+        this.starField.visible = false;
+        scene.add(this.starField);
+
+        // Moon sprite
+        this.moonSprite = this.createMoonSprite();
+        this.moonSprite.visible = false;
+        scene.add(this.moonSprite);
+
+        // Volumetric cloud billboard layer
+        this.cloudLayer = new CloudLayer(scene);
+    }
+
+    private createStarField(): THREE.Points {
+        const positions = new Float32Array(STAR_COUNT * 3);
+        const sizes = new Float32Array(STAR_COUNT);
+        const radius = 230; // slightly inside sky dome (250)
+
+        for (let i = 0; i < STAR_COUNT; i++) {
+            // Uniform distribution on upper hemisphere
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(Math.random()); // 0 to PI/2 (upper hemisphere only)
+            const r = radius;
+
+            positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+            positions[i * 3 + 1] = r * Math.cos(phi); // always positive (upper hemisphere)
+            positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+            // Vary star sizes: mostly small, a few bright ones
+            sizes[i] = 0.5 + Math.pow(Math.random(), 3) * 2.5;
+        }
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        const mat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            sizeAttenuation: false,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            opacity: 0.85,
+        });
+
+        return new THREE.Points(geo, mat);
+    }
+
+    private createMoonSprite(): THREE.Sprite {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d')!;
+
+        // Full moon circle
+        ctx.beginPath();
+        ctx.arc(32, 32, 24, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(230, 232, 240, 0.95)';
+        ctx.fill();
+
+        // Crescent shadow (offset circle to create crescent)
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(42, 30, 20, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Soft glow
+        ctx.beginPath();
+        const glow = ctx.createRadialGradient(32, 32, 16, 32, 32, 32);
+        glow.addColorStop(0, 'rgba(200, 210, 240, 0.15)');
+        glow.addColorStop(1, 'rgba(200, 210, 240, 0)');
+        ctx.arc(32, 32, 32, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
+
+        const tex = new THREE.CanvasTexture(canvas);
+        const mat = new THREE.SpriteMaterial({
+            map: tex,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(20, 20, 1);
+        sprite.position.set(-60, 140, -40);
+        return sprite;
     }
 
     applyPreset(timeOfDay: TimeOfDay): void {
@@ -151,6 +246,32 @@ export class SkySystem {
             this.scene.background.setHex(config.horizonColor);
         }
 
+        // Cloud density derived from fog and lighting:
+        //   High fog density  -> more clouds (overcast / rain)
+        //   Low sun intensity -> night, light clouds
+        //   Low fog density   -> clear, few clouds
+        const fogFactor = Math.min(1, config.fogDensity / 0.006); // 0..1, 0.006 = densest preset
+        const isNight = config.useStadiumLights || config.sunPosition.y < 5;
+        let cloudDensity: number;
+        if (isNight) {
+            cloudDensity = 0.3;
+        } else if (fogFactor > 0.7) {
+            // Heavy fog -> overcast (0.6-0.8 depending on exact density)
+            cloudDensity = 0.6 + (fogFactor - 0.7) * 0.67;
+        } else {
+            // Clear to moderate: map fogFactor 0..0.7 -> 0.15..0.5
+            cloudDensity = 0.15 + fogFactor * 0.5;
+        }
+        this.cloudLayer.setDensity(cloudDensity);
+
+        // Tint clouds to match horizon for cohesive look
+        this.cloudLayer.setColor(new THREE.Color(config.horizonColor));
+
+        // Stars and moon — visible during night and sunset
+        const showNightSky = config.useStadiumLights || config.sunPosition.y < 10;
+        if (this.starField) this.starField.visible = showNightSky;
+        if (this.moonSprite) this.moonSprite.visible = showNightSky;
+
         // Stadium lights for night mode
         this.removeStadiumLights();
         if (config.useStadiumLights && config.stadiumLights) {
@@ -174,8 +295,19 @@ export class SkySystem {
         this.stadiumLights = [];
     }
 
-    update(_dt: number): void {
-        // Placeholder for future animation (e.g., sun movement, clouds)
+    private starTime = 0;
+
+    update(dt: number, windX = 0.5, windZ = 0): void {
+        this.starTime += dt;
+
+        // Subtle star twinkle via opacity modulation
+        if (this.starField?.visible) {
+            const mat = this.starField.material as THREE.PointsMaterial;
+            mat.opacity = 0.75 + 0.15 * Math.sin(this.starTime * 0.8);
+        }
+
+        // Drift clouds with wind
+        this.cloudLayer.update(dt, windX, windZ);
     }
 }
 

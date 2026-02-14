@@ -24,6 +24,18 @@ export class GameCamera {
     private shakeDuration = 0;
     private shakeTimer = 0;
 
+    // Look-ahead
+    private lookAheadVelocity = new THREE.Vector3();
+
+    // Dynamic FOV
+    private baseFov = 60;
+    private currentFov = 60;
+    private targetFov = 60;
+
+    // Crash zoom
+    private crashZoomProgress = 0;
+    private crashZoomActive = false;
+
     constructor() {
         this.camera = new THREE.PerspectiveCamera(
             60,
@@ -75,6 +87,29 @@ export class GameCamera {
         }
     }
 
+    /**
+     * Set look-ahead velocity for the followed target.
+     * Camera offsets in the direction of movement.
+     */
+    setLookAheadVelocity(vx: number, vz: number): void {
+        this.lookAheadVelocity.set(vx, 0, vz);
+    }
+
+    /**
+     * Set whether the player is sprinting (widens FOV).
+     */
+    setSprintFov(isSprinting: boolean): void {
+        this.targetFov = isSprinting ? 72 : this.baseFov;
+    }
+
+    /**
+     * Trigger crash zoom on score (briefly pulls camera in).
+     */
+    triggerCrashZoom(): void {
+        this.crashZoomActive = true;
+        this.crashZoomProgress = 0;
+    }
+
     update(dt: number, followTargets: THREE.Vector3 | THREE.Vector3[]): void {
         const targets = Array.isArray(followTargets) ? followTargets : null;
         if (targets) {
@@ -96,6 +131,39 @@ export class GameCamera {
         // Exponential smoothing
         this.target.lerp(_tempCenter, 1 - Math.exp(-4 * dt));
 
+        // Look-ahead: offset target in direction of movement
+        if (this.lookAheadVelocity.lengthSq() > 0.1) {
+            const speed = this.lookAheadVelocity.length();
+            const lookAheadDist = Math.min(speed * 0.4, 5);
+            this.target.x += (this.lookAheadVelocity.x / speed) * lookAheadDist;
+            this.target.z += (this.lookAheadVelocity.z / speed) * lookAheadDist;
+        }
+
+        // Dynamic FOV
+        this.currentFov = THREE.MathUtils.lerp(this.currentFov, this.targetFov, 1 - Math.exp(-4 * dt));
+        if (Math.abs(this.currentFov - this.camera.fov) > 0.1) {
+            this.camera.fov = this.currentFov;
+            this.camera.updateProjectionMatrix();
+        }
+
+        // Crash zoom (0.3s pull-in then ease back)
+        let crashZoomScale = 1.0;
+        if (this.crashZoomActive) {
+            this.crashZoomProgress += dt;
+            if (this.crashZoomProgress < 0.3) {
+                // Pull in: quadratic ease-out
+                const t = this.crashZoomProgress / 0.3;
+                crashZoomScale = 1.0 - 0.35 * t * (2 - t);
+            } else if (this.crashZoomProgress < 0.9) {
+                // Ease back out
+                const t = (this.crashZoomProgress - 0.3) / 0.6;
+                crashZoomScale = 0.65 + 0.35 * t * t;
+            } else {
+                this.crashZoomActive = false;
+                this.crashZoomProgress = 0;
+            }
+        }
+
         // Adjust zoom based on target spread if multiple targets
         let zoomMod = 1.0;
         if (targets && targets.length > 1) {
@@ -108,7 +176,7 @@ export class GameCamera {
             zoomMod = 1.0 + Math.min(spread * 0.05, 0.8);
         }
 
-        _finalOffset.copy(this.currentOffset).multiplyScalar(zoomMod);
+        _finalOffset.copy(this.currentOffset).multiplyScalar(zoomMod * crashZoomScale);
         this.camera.position.copy(this.target).add(_finalOffset);
         this.camera.lookAt(this.target);
 

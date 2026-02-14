@@ -135,6 +135,20 @@ export class Stickman {
     private rightWristband: THREE.Mesh | null = null;
     private currentHeadShape: 'circle' | 'square' | 'triangle' = 'circle';
 
+    // Jersey number
+    private jerseyNumberMesh: THREE.Mesh | null = null;
+    private jerseyNumberCanvas: HTMLCanvasElement | null = null;
+    private jerseyNumberTexture: THREE.CanvasTexture | null = null;
+
+    // Hair
+    private hairGroup: THREE.Group | null = null;
+    private hairStyle: 'none' | 'buzzcut' | 'ponytail' | 'afro' = 'none';
+    private hairColor = 0x3d2b1f;
+
+    // Shoe color (per-instance material, not shared)
+    private leftShoeMat: THREE.MeshStandardMaterial;
+    private rightShoeMat: THREE.MeshStandardMaterial;
+
     private static readonly LIMB_RADIUS = 0.055;
     private static readonly JOINT_RADIUS = 0.06;
 
@@ -226,6 +240,7 @@ export class Stickman {
         this.jerseyMesh = new THREE.Mesh(this.jerseyGeo, jerseyMat);
         this.jerseyMesh.castShadow = true;
         this.jerseyMesh.renderOrder = 1; // draw on top of limbs
+        this.jerseyMesh.frustumCulled = false; // positions update per-frame; bounding sphere would be stale
         this.group.add(this.jerseyMesh);
 
         // Shorts - 6 vertices: waist_L, waist_R, L_knee, R_knee, waist_front, waist_back
@@ -262,15 +277,33 @@ export class Stickman {
         this.shortsMesh = new THREE.Mesh(this.shortsGeo, shortsMat);
         this.shortsMesh.castShadow = true;
         this.shortsMesh.renderOrder = 1;
+        this.shortsMesh.frustumCulled = false; // positions update per-frame; bounding sphere would be stale
         this.group.add(this.shortsMesh);
 
-        // Shoes at ankles — small elongated spheres for ground contact readability
-        const shoeGeo = new THREE.SphereGeometry(0.07, 8, 6);
-        shoeGeo.scale(1.3, 0.7, 1.6); // flatter, longer shape
-        this.leftShoeMesh = new THREE.Mesh(shoeGeo, shared.shoe);
-        this.rightShoeMesh = new THREE.Mesh(shoeGeo.clone(), shared.shoe);
+        // Shoes at ankles — box meshes for crisp ground contact readability
+        const shoeGeo = new THREE.BoxGeometry(0.08, 0.04, 0.12);
+        this.leftShoeMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.4,
+            metalness: 0.1,
+            emissive: 0x444444,
+            emissiveIntensity: 0.15,
+        });
+        applyRimLighting(this.leftShoeMat, 0.3);
+        this.rightShoeMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 0.4,
+            metalness: 0.1,
+            emissive: 0x444444,
+            emissiveIntensity: 0.15,
+        });
+        applyRimLighting(this.rightShoeMat, 0.3);
+        this.leftShoeMesh = new THREE.Mesh(shoeGeo, this.leftShoeMat);
+        this.rightShoeMesh = new THREE.Mesh(shoeGeo.clone(), this.rightShoeMat);
         this.leftShoeMesh.castShadow = true;
         this.rightShoeMesh.castShadow = true;
+        this.leftShoeMesh.frustumCulled = false;
+        this.rightShoeMesh.frustumCulled = false;
         this.group.add(this.leftShoeMesh);
         this.group.add(this.rightShoeMesh);
 
@@ -389,6 +422,12 @@ export class Stickman {
             this.headbandMesh.position.set(headX, headY + 0.04, headZ);
         }
 
+        // Update hair position to follow head
+        if (this.hairGroup) {
+            this.hairGroup.position.set(headX, headY, headZ);
+            this.hairGroup.rotation.y = facing;
+        }
+
         // Update wristband positions (joints 4=L_wrist, 7=R_wrist)
         if (this.leftWristband) {
             this.leftWristband.position.set(
@@ -458,6 +497,17 @@ export class Stickman {
 
         jerseyPos.needsUpdate = true;
         this.jerseyGeo.computeVertexNormals();
+
+        // Update jersey number position: centered on back of torso, behind spine
+        if (this.jerseyNumberMesh) {
+            // Midpoint between neck and waist (upper back area)
+            const backX = (neckX + waistX) * 0.5 - fwdX * (DEPTH * 0.5 + 0.01);
+            const backY = (neckY + waistY) * 0.5;
+            const backZ = (neckZ + waistZ) * 0.5 - fwdZ * (DEPTH * 0.5 + 0.01);
+            this.jerseyNumberMesh.position.set(backX, backY, backZ);
+            // Face away from the player (backward direction)
+            this.jerseyNumberMesh.rotation.y = facing + Math.PI;
+        }
 
         // Update shorts (6 vertices: 0=waist_L, 1=waist_R, 2=L_knee, 3=R_knee, 4=waist_front, 5=waist_back)
         const shortsPos = this.shortsGeo.attributes.position as THREE.BufferAttribute;
@@ -633,6 +683,141 @@ export class Stickman {
         }
     }
 
+    /** Create or update a jersey number rendered on the player's back */
+    setJerseyNumber(num: number): void {
+        const clamped = Math.max(1, Math.min(99, Math.round(num)));
+
+        // Create or reuse canvas
+        if (!this.jerseyNumberCanvas) {
+            this.jerseyNumberCanvas = document.createElement('canvas');
+            this.jerseyNumberCanvas.width = 64;
+            this.jerseyNumberCanvas.height = 64;
+        }
+        const ctx = this.jerseyNumberCanvas.getContext('2d')!;
+        ctx.clearRect(0, 0, 64, 64);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 40px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(clamped), 32, 32);
+
+        if (this.jerseyNumberTexture) {
+            this.jerseyNumberTexture.needsUpdate = true;
+        } else {
+            this.jerseyNumberTexture = new THREE.CanvasTexture(this.jerseyNumberCanvas);
+            this.jerseyNumberTexture.minFilter = THREE.LinearFilter;
+            this.jerseyNumberTexture.magFilter = THREE.LinearFilter;
+        }
+
+        if (!this.jerseyNumberMesh) {
+            const planeGeo = new THREE.PlaneGeometry(0.15, 0.15);
+            const planeMat = new THREE.MeshBasicMaterial({
+                map: this.jerseyNumberTexture,
+                transparent: true,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+            });
+            this.jerseyNumberMesh = new THREE.Mesh(planeGeo, planeMat);
+            this.jerseyNumberMesh.renderOrder = 2; // on top of jersey
+            this.jerseyNumberMesh.frustumCulled = false;
+            this.group.add(this.jerseyNumberMesh);
+        }
+    }
+
+    /** Set hair style with optional color override */
+    setHairStyle(style: string, color?: number): void {
+        const validStyle = (style === 'buzzcut' || style === 'ponytail' || style === 'afro')
+            ? style : 'none';
+
+        // Remove old hair group
+        if (this.hairGroup) {
+            this.hairGroup.traverse((child) => {
+                if (child instanceof THREE.Mesh) {
+                    child.geometry.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+            this.group.remove(this.hairGroup);
+            this.hairGroup = null;
+        }
+
+        this.hairStyle = validStyle;
+        if (color !== undefined) this.hairColor = color;
+
+        if (validStyle === 'none') return;
+
+        this.hairGroup = new THREE.Group();
+        const hairMat = new THREE.MeshStandardMaterial({
+            color: this.hairColor,
+            roughness: 0.8,
+        });
+
+        switch (validStyle) {
+            case 'buzzcut': {
+                const geo = new THREE.SphereGeometry(1, 12, 12);
+                const mesh = new THREE.Mesh(geo, hairMat);
+                mesh.scale.set(0.12, 0.06, 0.12);
+                mesh.position.set(0, 0.14, 0); // on top of head
+                mesh.frustumCulled = false;
+                this.hairGroup.add(mesh);
+                break;
+            }
+            case 'ponytail': {
+                // Small bun on top-back of head
+                const bunGeo = new THREE.SphereGeometry(0.06, 10, 10);
+                const bun = new THREE.Mesh(bunGeo, hairMat);
+                bun.position.set(0, 0.1, -0.1); // top-back
+                bun.frustumCulled = false;
+                this.hairGroup.add(bun);
+
+                // Trailing tail cylinder going backward-downward
+                const tailGeo = new THREE.CylinderGeometry(0.02, 0.015, 0.2, 8);
+                const tail = new THREE.Mesh(tailGeo, hairMat.clone());
+                tail.position.set(0, -0.01, -0.18); // behind and below bun
+                tail.rotation.x = Math.PI * 0.35; // angle backward-down
+                tail.frustumCulled = false;
+                this.hairGroup.add(tail);
+                break;
+            }
+            case 'afro': {
+                // Large sphere on top of head
+                const afroGeo = new THREE.SphereGeometry(0.14, 16, 16);
+                const afroMesh = new THREE.Mesh(afroGeo, hairMat);
+                afroMesh.position.set(0, 0.12, 0);
+                afroMesh.frustumCulled = false;
+                this.hairGroup.add(afroMesh);
+
+                // Wireframe overlay for fuzzy look
+                const wireGeo = new THREE.SphereGeometry(0.145, 12, 12);
+                const wireMat = new THREE.MeshBasicMaterial({
+                    color: this.hairColor,
+                    wireframe: true,
+                    transparent: true,
+                    opacity: 0.4,
+                });
+                const wireMesh = new THREE.Mesh(wireGeo, wireMat);
+                wireMesh.position.set(0, 0.12, 0);
+                wireMesh.frustumCulled = false;
+                this.hairGroup.add(wireMesh);
+                break;
+            }
+        }
+
+        this.group.add(this.hairGroup);
+    }
+
+    /** Set shoe color for both feet */
+    setShoeColor(color: number): void {
+        this.leftShoeMat.color.setHex(color);
+        this.leftShoeMat.needsUpdate = true;
+        this.rightShoeMat.color.setHex(color);
+        this.rightShoeMat.needsUpdate = true;
+    }
+
     /** Scale the stickman's height by a multiplier (0.85-1.15 range) */
     setHeight(multiplier: number): void {
         const clamped = Math.max(0.85, Math.min(1.15, multiplier));
@@ -697,6 +882,8 @@ export class Stickman {
         (this.shortsMesh.material as THREE.Material).dispose();
         this.leftShoeMesh.geometry.dispose();
         this.rightShoeMesh.geometry.dispose();
+        this.leftShoeMat.dispose();
+        this.rightShoeMat.dispose();
 
         // Dispose eyes
         this.leftEye.geometry.dispose();
@@ -722,6 +909,29 @@ export class Stickman {
         if (this.rightWristband) {
             this.rightWristband.geometry.dispose();
             (this.rightWristband.material as THREE.Material).dispose();
+        }
+
+        // Dispose jersey number
+        if (this.jerseyNumberMesh) {
+            this.jerseyNumberMesh.geometry.dispose();
+            (this.jerseyNumberMesh.material as THREE.Material).dispose();
+        }
+        if (this.jerseyNumberTexture) {
+            this.jerseyNumberTexture.dispose();
+        }
+
+        // Dispose hair
+        if (this.hairGroup) {
+            this.hairGroup.traverse((child) => {
+                if (child instanceof THREE.Mesh) {
+                    child.geometry.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
         }
     }
 }

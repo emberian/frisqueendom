@@ -257,15 +257,6 @@ impl DiscSimulator {
 }
 ```
 
-### JS Fallback
-
-If WASM is unavailable, a TypeScript implementation of the same interface provides basic disc physics:
-- Simpler model (no aerodynamic tables, analytical coefficients only)
-- Lower integration rate (120Hz vs 240Hz)
-- Simpler wind (base + noise, no gusts/thermals)
-- Functional but not as physically nuanced
-
-Hard-deterministic modes (replay validation, ranked challenges, record verification) require the WASM path. If WASM cannot initialize, those modes are disabled rather than silently switching model fidelity.
 
 ## Game Loop
 

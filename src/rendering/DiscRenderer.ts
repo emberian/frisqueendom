@@ -77,11 +77,33 @@ export function createDiscMesh(): THREE.Group {
     return group;
 }
 
-export function updateDiscMesh(mesh: THREE.Group, sim: DiscSimulator): void {
+/**
+ * Set team color on the disc body and stripe.
+ */
+export function setDiscTeamColor(mesh: THREE.Group, primaryHex: number, secondaryHex: number): void {
+    // Body color
+    const bodyMesh = mesh.children[0] as THREE.Mesh;
+    if (bodyMesh?.material instanceof THREE.MeshStandardMaterial) {
+        bodyMesh.material.color.setHex(primaryHex);
+        bodyMesh.material.emissive.setHex(primaryHex);
+        bodyMesh.material.emissiveIntensity = 0.05;
+    }
+    // Stripe color
+    if (mesh.userData.stripeShader) {
+        mesh.userData.stripeShader.uniforms.color.value.setHex(secondaryHex);
+        mesh.userData.stripeShader.uniforms.emissive.value.setHex(secondaryHex);
+    }
+}
+
+export function updateDiscMesh(mesh: THREE.Group, sim: DiscSimulator, spinRate?: number): void {
     mesh.position.set(sim.pos_x(), sim.pos_y(), sim.pos_z());
     mesh.quaternion.set(sim.quat_x(), sim.quat_y(), sim.quat_z(), sim.quat_w());
-    
+
     if (mesh.userData.stripeShader) {
-        mesh.userData.stripeShader.uniforms.time.value = performance.now() / 1000;
+        // Tie stripe animation speed to actual spin rate for realistic blur
+        const rate = spinRate ?? 30;
+        mesh.userData.stripeShader.uniforms.time.value += rate * 0.001;
+        // Increase blur intensity with spin
+        mesh.userData.stripeShader.uniforms.intensity.value = 0.1 + Math.min(Math.abs(rate) / 100, 0.5);
     }
 }

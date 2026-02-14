@@ -3,3 +3,4 @@ dist
 .vite
 frisque-physics/pkg/
 frisque-physics/target/
+test-results

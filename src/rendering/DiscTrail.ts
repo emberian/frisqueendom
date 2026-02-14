@@ -30,9 +30,9 @@ export class DiscTrail {
         this.material = new LineMaterial({
             vertexColors: true,
             transparent: true,
-            linewidth: 0.08,
+            linewidth: 0.1,
             worldUnits: true,
-            opacity: 0.8,
+            opacity: 0.85,
             alphaToCoverage: true
         });
         this.material.resolution.set(window.innerWidth, window.innerHeight);
@@ -58,13 +58,15 @@ export class DiscTrail {
             this.positions[i * 3 + 1] = p.y;
             this.positions[i * 3 + 2] = p.z;
 
-            const alpha = 1 - i / this.count;
+            const t = i / this.count; // 0 = head, 1 = tail
             const base = this.overrideColor || this.teamColor;
 
-            // Gradient from team color to white at the head
-            this.colors[i * 3] = base.r + (1 - base.r) * alpha * 0.5;
-            this.colors[i * 3 + 1] = base.g + (1 - base.g) * alpha * 0.5;
-            this.colors[i * 3 + 2] = base.b + (1 - base.b) * alpha * 0.5;
+            // Head is bright white-tinted, tail fades to dim team color
+            const brightness = 1 - t * 0.7; // 1.0 → 0.3
+            const whiteMix = (1 - t) * 0.5; // head has 50% white blend
+            this.colors[i * 3] = (base.r + (1 - base.r) * whiteMix) * brightness;
+            this.colors[i * 3 + 1] = (base.g + (1 - base.g) * whiteMix) * brightness;
+            this.colors[i * 3 + 2] = (base.b + (1 - base.b) * whiteMix) * brightness;
         }
 
         // LineGeometry expects full arrays
