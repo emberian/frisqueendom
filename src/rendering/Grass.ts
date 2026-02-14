@@ -5,6 +5,8 @@ import { Random } from '../data/SeededRandom';
 const BLADE_COUNT = 15000;
 const BLADE_HEIGHT = 0.07;
 const BLADE_WIDTH = 0.015;
+const MOWING_STRIPE_WIDTH = 5.0; // meters per stripe lane
+const MOWING_BRIGHTNESS_DIFF = 0.07; // ~7% brightness difference between lanes
 
 export class GrassField {
     mesh: THREE.InstancedMesh;
@@ -77,6 +79,12 @@ export class GrassField {
                 vec3 tipColor = vec3(1.2, 1.1, 0.8); // Sun-kissed tips
                 diffuseColor.rgb *= mix(vec3(0.4, 0.4, 0.4), tipColor, vRelativeY);
 
+                // Mowing stripe pattern (perpendicular to endzones, along X axis)
+                float stripePhase = floor(vWorldPos.z / ${MOWING_STRIPE_WIDTH.toFixed(1)});
+                float stripeMod = mod(stripePhase, 2.0);
+                float mowFactor = mix(1.0, ${(1.0 - MOWING_BRIGHTNESS_DIFF).toFixed(3)}, stripeMod);
+                diffuseColor.rgb *= mowFactor;
+
                 // Cloud shadows (scrolling noise)
                 float noise = sin(vWorldPos.x * 0.1 + time * 0.5) * cos(vWorldPos.z * 0.1 - time * 0.3);
                 float shadow = smoothstep(0.2, 0.8, noise * 0.5 + 0.5);
@@ -105,13 +113,14 @@ export class GrassField {
             this.dummy.updateMatrix();
             this.mesh.setMatrixAt(i, this.dummy.matrix);
 
-            // Color variation + mowing stripes
-            const stripe = Math.floor(z / 3) % 2;
-            const baseG = 0.45 + stripe * 0.08;
+            // Color variation + mowing stripes (perpendicular to endzones, along X)
+            // Stripes alternate every MOWING_STRIPE_WIDTH meters along the Z axis
+            const stripe = Math.floor(z / MOWING_STRIPE_WIDTH) % 2;
+            const mowBrightness = stripe === 0 ? 1.0 : 1.0 - MOWING_BRIGHTNESS_DIFF;
             const noise = (Random.next() - 0.5) * 0.08;
-            colors[i * 3] = 0.15 + noise;
-            colors[i * 3 + 1] = baseG + noise;
-            colors[i * 3 + 2] = 0.12 + noise;
+            colors[i * 3] = (0.15 + noise) * mowBrightness;
+            colors[i * 3 + 1] = (0.50 + noise) * mowBrightness;
+            colors[i * 3 + 2] = (0.12 + noise) * mowBrightness;
         }
 
         this.mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);

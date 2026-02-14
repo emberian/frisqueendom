@@ -279,7 +279,7 @@ describe('ReplayRecorder', () => {
 
             const data = recorder.getData();
 
-            expect(data.version).toBe('1.0.0');
+            expect(data.version).toBe('1.1.0');
             expect(data.matchSeed).toBe(99999);
             expect(data.teamNames.home).toBe('Home Team');
             expect(data.teamNames.away).toBe('Away Team');

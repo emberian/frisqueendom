@@ -36,6 +36,7 @@ interface MockPlayer {
     stats?: { fullName?: string } | null;
     role: string;
     index: number;
+    lastInBoundsGround: boolean;
 }
 
 interface MockDisc {
@@ -68,6 +69,7 @@ function createMockPlayer(
         stats: null,
         role: 'handler',
         index: 0,
+        lastInBoundsGround: true,
     };
 }
 
@@ -164,13 +166,13 @@ describe('FieldBounds', () => {
         it('should return brick mark for front endzone', () => {
             const brick = getBrickMark(0);
             expect(brick.x).toBe(0);
-            expect(brick.z).toBe(BRICK_MARK_DISTANCE);
+            expect(brick.z).toBe(ENDZONE_DEPTH + BRICK_MARK_DISTANCE);
         });
 
         it('should return brick mark for back endzone', () => {
             const brick = getBrickMark(1);
             expect(brick.x).toBe(0);
-            expect(brick.z).toBe(FIELD_LENGTH - BRICK_MARK_DISTANCE);
+            expect(brick.z).toBe(FIELD_LENGTH - ENDZONE_DEPTH - BRICK_MARK_DISTANCE);
         });
 
         it('should place brick marks inside playing field', () => {

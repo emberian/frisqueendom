@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SKY_PRESETS, type SkyConfig, type TimeOfDay } from '../data/WeatherTypes';
+import { FIELD_LENGTH } from '../data/Constants';
 
 export class SkySystem {
     private scene: THREE.Scene;
@@ -7,6 +8,8 @@ export class SkySystem {
     private sunSprite: THREE.Sprite;
     private sunLight: THREE.DirectionalLight;
     private ambientLight: THREE.AmbientLight;
+    private hemiLight: THREE.HemisphereLight;
+    private stadiumLights: THREE.DirectionalLight[] = [];
 
     constructor(
         scene: THREE.Scene,
@@ -16,6 +19,10 @@ export class SkySystem {
         this.scene = scene;
         this.sunLight = sunLight;
         this.ambientLight = ambientLight;
+
+        // Hemisphere light for sky/ground color bleed
+        this.hemiLight = new THREE.HemisphereLight(0x88bbee, 0x446622, 0.5);
+        scene.add(this.hemiLight);
 
         // Sky dome
         const skyGeo = new THREE.SphereGeometry(250, 32, 32);
@@ -45,20 +52,20 @@ export class SkySystem {
                     vec3 dir = normalize(vWorldPosition);
                     float h = dir.y;
                     vec3 color;
-                    
+
                     if (h > 0.0) {
                         float zenithMix = pow(h, 0.6);
                         color = mix(horizonColor, topColor, zenithMix);
-                        
+
                         // Sun halo
                         float sunGlow = pow(max(0.0, dot(dir, normalize(sunDir))), 120.0);
                         color += vec3(1.0, 0.9, 0.7) * sunGlow * 0.8;
                     } else {
                         color = mix(horizonColor, bottomColor, pow(-h, 0.5));
                     }
-                    
+
                     color = mix(color, vec3(1.0), clamp(0.02 / (abs(h) + 0.01), 0.0, 0.15));
-                    
+
                     gl_FragColor = vec4(color, 1.0);
                 }
             `,
@@ -119,18 +126,63 @@ export class SkySystem {
             config.sunPosition.z,
         );
 
+        // Shadow bias
+        if (this.sunLight.shadow) {
+            this.sunLight.shadow.bias = config.shadowBias;
+        }
+
         // Update ambient light
         this.ambientLight.intensity = config.ambientIntensity;
         this.ambientLight.color.setHex(config.ambientColor);
+
+        // Update hemisphere light
+        this.hemiLight.color.setHex(config.hemiSkyColor);
+        this.hemiLight.groundColor.setHex(config.hemiGroundColor);
+        this.hemiLight.intensity = config.hemiIntensity;
 
         // Update fog if scene has it
         if (this.scene.fog && this.scene.fog instanceof THREE.FogExp2) {
             this.scene.fog.color.setHex(config.fogColor);
             this.scene.fog.density = config.fogDensity;
         }
+
+        // Update scene background to match horizon for seamless blending
+        if (this.scene.background instanceof THREE.Color) {
+            this.scene.background.setHex(config.horizonColor);
+        }
+
+        // Stadium lights for night mode
+        this.removeStadiumLights();
+        if (config.useStadiumLights && config.stadiumLights) {
+            const fieldCenter = new THREE.Vector3(0, 0, FIELD_LENGTH / 2);
+            for (const lightDef of config.stadiumLights) {
+                const light = new THREE.DirectionalLight(lightDef.color, lightDef.intensity);
+                light.position.set(lightDef.x, lightDef.y, lightDef.z);
+                light.target.position.copy(fieldCenter);
+                this.scene.add(light);
+                this.scene.add(light.target);
+                this.stadiumLights.push(light);
+            }
+        }
+    }
+
+    private removeStadiumLights(): void {
+        for (const light of this.stadiumLights) {
+            this.scene.remove(light);
+            this.scene.remove(light.target);
+        }
+        this.stadiumLights = [];
     }
 
     update(_dt: number): void {
         // Placeholder for future animation (e.g., sun movement, clouds)
     }
+}
+
+/**
+ * Convenience function to apply a time-of-day preset to an existing SkySystem.
+ * Equivalent to calling skySystem.applyPreset(timeOfDay).
+ */
+export function applyTimeOfDay(sky: SkySystem, _scene: THREE.Scene, timeOfDay: TimeOfDay): void {
+    sky.applyPreset(timeOfDay);
 }

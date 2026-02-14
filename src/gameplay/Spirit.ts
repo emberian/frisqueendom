@@ -45,16 +45,16 @@ export class SpiritSystem {
         communication: SPIRIT_DEFAULTS.COMMUNICATION,
         total: SPIRIT_DEFAULTS.MAX_CATEGORY_SCORE * 5,
     };
-    
+
     // Player reputation tracking
     private playerFoulHistory: Map<string, number> = new Map(); // playerId -> foul count
     private contestedCalls = 0;
     private acceptedCalls = 0;
-    
+
     // Spirit degradation for aggressive play
     private aggressivePlays = 0;
     private fairPlays = 0;
-    
+
     private updateTimer = 0;
     private readonly UPDATE_INTERVAL = 0.1; // Check fouls every 100ms instead of every frame
 
@@ -71,15 +71,15 @@ export class SpiritSystem {
 
     private checkForFouls(match: Match, players: Player[], disc: Disc): void {
         const thresholdSq = FOUL_CONSTANTS.CONTACT_DISTANCE_THRESHOLD * FOUL_CONSTANTS.CONTACT_DISTANCE_THRESHOLD;
-        
+
         // Check for contact between players - O(N^2) but only runs at 10Hz
         for (let i = 0; i < players.length; i++) {
             const p1 = players[i];
             const p1Pos = p1.movement.position;
-            
+
             for (let j = i + 1; j < players.length; j++) {
                 const p2 = players[j];
-                
+
                 const distSq = p1Pos.distanceToSquared(p2.movement.position);
                 if (distSq < thresholdSq) {
                     // Potential contact foul
@@ -89,14 +89,14 @@ export class SpiritSystem {
                 }
             }
         }
-        
+
         // Check for strip (disc contact while in possession)
         if (disc.state === 'held' && disc.holder) {
             const holderPos = disc.holder.movement.position;
             for (const player of players) {
                 if (player === disc.holder) continue;
                 if (player.team === disc.holder.team) continue;
-                
+
                 const distSq = player.movement.position.distanceToSquared(holderPos);
                 if (distSq < 0.36 && this.shouldCallFoul(disc.holder)) { // 0.6 * 0.6 = 0.36
                     this.callFoul('strip', disc.holder, player, 'Disc contacted while catching');
@@ -109,11 +109,11 @@ export class SpiritSystem {
         // AI players call fouls based on their spirit stat
         if (!player.isControlled && player.stats) {
             const spirit = player.stats.attributes.spirit;
-            const callChance = FOUL_CONSTANTS.BASE_FOUL_CALL_CHANCE + 
+            const callChance = FOUL_CONSTANTS.BASE_FOUL_CALL_CHANCE +
                 (spirit / 100) * FOUL_CONSTANTS.SPIRIT_FOUL_MODIFIER;
             return Random.next() < callChance;
         }
-        return false; // Player-controlled fouls are called via input
+        return false; // Player-controlled fouls are called via callPlayerFoul()
     }
 
     callFoul(
@@ -123,9 +123,9 @@ export class SpiritSystem {
         description: string,
     ): FoulCall | null {
         // Check for duplicate recent calls
-        const recentCall = this.fouls.find(f => 
-            f.type === type && 
-            f.caller === caller && 
+        const recentCall = this.fouls.find(f =>
+            f.type === type &&
+            f.caller === caller &&
             f.offender === offender &&
             performance.now() - f.timestamp < FOUL_CONSTANTS.FOUL_COOLDOWN_MS
         );
@@ -143,11 +143,11 @@ export class SpiritSystem {
         };
 
         this.fouls.push(foul);
-        
+
         // Track foul history
         const currentFouls = this.playerFoulHistory.get(offender.id) || 0;
         this.playerFoulHistory.set(offender.id, currentFouls + 1);
-        
+
         // Auto-resolve AI fouls
         if (!caller.isControlled || !offender.isControlled) {
             this.autoResolveFoul(foul);
@@ -156,15 +156,77 @@ export class SpiritSystem {
         return foul;
     }
 
+    /**
+     * Create a foul call from the human player's controlled character.
+     * The accused AI player resolves it (contest/accept) using autoResolveFoul().
+     * Returns the FoulCall so main.ts can show UI, or null if the call was a duplicate.
+     */
+    callPlayerFoul(
+        callingPlayerId: string,
+        accusedPlayerId: string,
+        foulType: string,
+        players: Player[],
+    ): FoulCall | null {
+        const caller = players.find(p => p.id === callingPlayerId);
+        const accused = players.find(p => p.id === accusedPlayerId);
+        if (!caller || !accused) return null;
+
+        // Map the foul type string to our FoulType
+        const validTypes: FoulType[] = ['travel', 'strip', 'pick', 'contact', 'fast_count', 'timeout'];
+        const type: FoulType = validTypes.includes(foulType as FoulType)
+            ? (foulType as FoulType)
+            : 'contact';
+
+        const descriptionMap: Record<FoulType, string> = {
+            travel: 'Travel violation called by player',
+            strip: 'Strip foul called by player',
+            pick: 'Pick called by player',
+            contact: 'Contact foul called by player',
+            fast_count: 'Fast count called by player',
+            timeout: 'Timeout violation called by player',
+        };
+
+        // Check for duplicate recent calls
+        const recentCall = this.fouls.find(f =>
+            f.type === type &&
+            f.caller === caller &&
+            f.offender === accused &&
+            performance.now() - f.timestamp < FOUL_CONSTANTS.FOUL_COOLDOWN_MS
+        );
+        if (recentCall) return null;
+
+        const foul: FoulCall = {
+            id: `foul_${Date.now()}_${Random.next().toString(36).substr(2, 9)}`,
+            type,
+            caller,
+            offender: accused,
+            timestamp: performance.now(),
+            description: descriptionMap[type],
+            resolution: null,
+            affectedScore: false,
+        };
+
+        this.fouls.push(foul);
+
+        // Track foul history
+        const currentFouls = this.playerFoulHistory.get(accused.id) || 0;
+        this.playerFoulHistory.set(accused.id, currentFouls + 1);
+
+        // The accused AI player resolves the call
+        this.autoResolveFoul(foul);
+
+        return foul;
+    }
+
     private autoResolveFoul(foul: FoulCall): void {
         // AI decision making for foul resolution
         const callerSpirit = foul.caller.stats?.attributes.spirit || 50;
         const offenderSpirit = foul.offender.stats?.attributes.spirit || 50;
-        
+
         // Higher spirit players more likely to accept calls
         const acceptChance = (offenderSpirit / 100) * 0.8;
         const contestChance = 0.1 + (100 - offenderSpirit) / 100 * 0.3;
-        
+
         const roll = Random.next();
         if (roll < acceptChance) {
             this.resolveFoul(foul, 'accepted');
@@ -177,7 +239,7 @@ export class SpiritSystem {
 
     resolveFoul(foul: FoulCall, resolution: CallResolution): void {
         foul.resolution = resolution;
-        
+
         switch (resolution) {
             case 'accepted':
                 this.acceptedCalls++;
@@ -196,10 +258,10 @@ export class SpiritSystem {
     // Player input for calling fouls
     playerCallFoul(caller: Player, nearestOpponent: Player | null): FoulCall | null {
         if (!nearestOpponent) return null;
-        
+
         // Determine foul type based on context
         let type: FoulType = 'contact';
-        
+
         // Could be extended to detect specific situations
         return this.callFoul(type, caller, nearestOpponent, 'Contact foul called by player');
     }
@@ -217,26 +279,26 @@ export class SpiritSystem {
         // Calculate player team spirit
         const totalCalls = this.fouls.length;
         const contestedRatio = totalCalls > 0 ? this.contestedCalls / totalCalls : 0;
-        
+
         // Too many contested calls reduces fair-mindedness
         if (contestedRatio > 0.3) {
             this.playerTeamSpirit.fairMindedness = Math.max(0, 2 - contestedRatio * 2);
         }
-        
+
         // Aggressive play reduces body contact score
         if (this.aggressivePlays > this.fairPlays * 2) {
             this.playerTeamSpirit.foulsAndBodyContact = Math.max(0, 2 - (this.aggressivePlays / 10));
         }
-        
+
         // Recalculate totals
-        this.playerTeamSpirit.total = 
+        this.playerTeamSpirit.total =
             this.playerTeamSpirit.rulesKnowledge +
             this.playerTeamSpirit.foulsAndBodyContact +
             this.playerTeamSpirit.fairMindedness +
             this.playerTeamSpirit.positiveAttitude +
             this.playerTeamSpirit.communication;
-        
-        this.aiTeamSpirit.total = 
+
+        this.aiTeamSpirit.total =
             this.aiTeamSpirit.rulesKnowledge +
             this.aiTeamSpirit.foulsAndBodyContact +
             this.aiTeamSpirit.fairMindedness +
@@ -287,7 +349,7 @@ export class SpiritSystem {
     } {
         const totalFouls = this.fouls.length;
         const contestedRatio = totalFouls > 0 ? this.contestedCalls / totalFouls : 0;
-        
+
         return {
             totalFouls,
             contestedRatio,
@@ -304,7 +366,7 @@ export class SpiritSystem {
         this.acceptedCalls = 0;
         this.aggressivePlays = 0;
         this.fairPlays = 0;
-        
+
         this.playerTeamSpirit = {
             rulesKnowledge: 2,
             foulsAndBodyContact: 2,
@@ -313,7 +375,7 @@ export class SpiritSystem {
             communication: 2,
             total: 10,
         };
-        
+
         this.aiTeamSpirit = {
             rulesKnowledge: 2,
             foulsAndBodyContact: 2,

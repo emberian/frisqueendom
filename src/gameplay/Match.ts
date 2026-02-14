@@ -5,7 +5,8 @@ import { PointFlow } from './Point';
 import { positionForPull, createAIPullParams } from './Pull';
 import { FIELD_LENGTH, ENDZONE_DEPTH } from '../data/Constants';
 import { isInBounds, isInEndzone, getBrickMark, nearestInBoundsPoint } from './FieldBounds';
-import type { MatchPhase, TeamSide } from '../data/Types';
+import type { MatchPhase, TeamSide, MatchConfig } from '../data/Types';
+import { DEFAULT_MATCH_CONFIG } from '../data/Types';
 
 export class Match {
     phase: MatchPhase = 'pre_pull';
@@ -29,6 +30,26 @@ export class Match {
         playerName: string;
     } | null = null;
 
+    // Match configuration
+    private config: MatchConfig;
+    private halfSwitched = false;
+
+    // Timed halves
+    private halfElapsed = 0;    // seconds elapsed in current half
+    private currentHalf = 1;    // 1 or 2
+
+    // Timeout system
+    private timeoutsPerHalf: number;
+    timeoutsRemaining: [number, number] = [2, 2]; // per team [home, away]
+    private timeoutPrePhase: MatchPhase = 'live_play'; // phase before timeout was called
+
+    constructor(config?: Partial<MatchConfig>) {
+        this.config = { ...DEFAULT_MATCH_CONFIG, ...config };
+        this.gameTo = this.config.scoreTarget;
+        this.timeoutsPerHalf = 2;
+        this.timeoutsRemaining = [this.timeoutsPerHalf, this.timeoutsPerHalf];
+    }
+
     get statusText(): string {
         return this.stateText;
     }
@@ -48,10 +69,29 @@ export class Match {
     setGameTo(points: number): void {
         if (!Number.isFinite(points)) return;
         this.gameTo = Math.max(1, Math.floor(points));
+        this.config.scoreTarget = this.gameTo;
     }
 
     getGameTo(): number {
         return this.gameTo;
+    }
+
+    /** Returns the full match configuration. */
+    getConfig(): MatchConfig {
+        return { ...this.config };
+    }
+
+    /** Apply a new match configuration. */
+    setConfig(config: Partial<MatchConfig>): void {
+        Object.assign(this.config, config);
+        if (config.scoreTarget !== undefined) {
+            this.gameTo = Math.max(1, Math.floor(config.scoreTarget));
+            this.config.scoreTarget = this.gameTo;
+        }
+        // Recalculate halfAt if not explicitly provided
+        if (config.halfAt === undefined && config.scoreTarget !== undefined) {
+            this.config.halfAt = Math.ceil(this.gameTo / 2);
+        }
     }
 
     getAttackingEndzone(): number {
@@ -74,6 +114,110 @@ export class Match {
         return this.pullingTeam === team;
     }
 
+    // ----- Timeout system -----
+
+    /**
+     * Call a timeout for the given team.
+     * Returns false if no timeouts remaining or not in a valid phase.
+     */
+    callTimeout(teamIndex: number): boolean {
+        if (teamIndex < 0 || teamIndex > 1) return false;
+        if (this.timeoutsRemaining[teamIndex] <= 0) return false;
+        // Timeouts can only be called during live play or pre_pull
+        if (this.phase !== 'live_play' && this.phase !== 'pre_pull') return false;
+
+        this.timeoutsRemaining[teamIndex]--;
+        this.timeoutPrePhase = this.phase;
+        this.phase = 'timeout';
+        this.phaseTimer = 0;
+        this.showText('TIMEOUT');
+        return true;
+    }
+
+    /** Whether the match is currently in a timeout. */
+    isInTimeout(): boolean {
+        return this.phase === 'timeout';
+    }
+
+    /** Resume play after a timeout. */
+    resumeFromTimeout(): void {
+        if (this.phase !== 'timeout') return;
+        this.phase = this.timeoutPrePhase;
+        this.showText('PLAY ON');
+    }
+
+    // ----- Game over / score checking -----
+
+    /**
+     * Returns true if the game is over, accounting for winByTwo and pointCap.
+     */
+    isGameOver(): boolean {
+        const [h, a] = this.score;
+        const target = this.config.scoreTarget;
+        const cap = this.config.pointCap;
+
+        // Hard cap: if either team reaches the cap, game is over
+        if (cap > 0 && (h >= cap || a >= cap)) {
+            return true;
+        }
+
+        // Win by two
+        if (this.config.winByTwo) {
+            const maxScore = Math.max(h, a);
+            const minScore = Math.min(h, a);
+            // Must reach target AND lead by 2
+            if (maxScore >= target && (maxScore - minScore) >= 2) {
+                return true;
+            }
+            return false;
+        }
+
+        // Standard: first to target
+        return h >= target || a >= target;
+    }
+
+    /**
+     * Returns the winning team side, or null if game is not over.
+     */
+    getWinner(): TeamSide | null {
+        if (!this.isGameOver()) return null;
+        if (this.score[0] > this.score[1]) return 'home';
+        if (this.score[1] > this.score[0]) return 'away';
+        return null; // tie at cap (unlikely but possible)
+    }
+
+    // ----- Half detection -----
+
+    /**
+     * Check whether it is time to switch ends for halftime.
+     * Returns true the first time the threshold is crossed.
+     */
+    private checkHalf(): boolean {
+        if (this.halfSwitched) return false;
+        const halfAt = this.config.halfAt;
+        if (this.score[0] >= halfAt || this.score[1] >= halfAt) {
+            this.halfSwitched = true;
+            return true;
+        }
+        return false;
+    }
+
+    /** Elapsed seconds in the current half (only meaningful if timedHalves enabled). */
+    getHalfElapsed(): number {
+        return this.halfElapsed;
+    }
+
+    /** Current half number (1 or 2). */
+    getCurrentHalf(): number {
+        return this.currentHalf;
+    }
+
+    /** Whether the current timed half has expired. */
+    isHalfTimeExpired(): boolean {
+        if (!this.config.timedHalves) return false;
+        return this.halfElapsed >= this.config.halfLengthMinutes * 60;
+    }
+
     update(
         dt: number,
         homeTeam: Team,
@@ -81,6 +225,11 @@ export class Match {
         disc: Disc,
     ): void {
         this.stateTextTimer = Math.max(0, this.stateTextTimer - dt);
+
+        // Track timed halves during live play
+        if (this.config.timedHalves && this.phase === 'live_play') {
+            this.halfElapsed += dt;
+        }
 
         switch (this.phase) {
             case 'pre_pull':
@@ -100,6 +249,10 @@ export class Match {
                 break;
             case 'point_reset':
                 this.handlePointReset(homeTeam, awayTeam, disc);
+                break;
+            case 'timeout':
+                // Timeout phase: just tick the timer, do nothing else
+                this.phaseTimer += dt;
                 break;
         }
     }
@@ -243,7 +396,7 @@ export class Match {
                 this.score[idx]++;
                 // Swap offense so point_reset correctly makes the scorer pull
                 this.offenseTeam = defenseTeam;
-                if (this.score[idx] >= this.gameTo) {
+                if (this.isGameOver()) {
                     this.showText(defenseTeam === 'home' ? 'HOME WINS!' : 'AWAY WINS!');
                 } else {
                     this.showText('CALLAHAN!');
@@ -273,7 +426,7 @@ export class Match {
             }
             const idx = this.offenseTeam === 'home' ? 0 : 1;
             this.score[idx]++;
-            if (this.score[idx] >= this.gameTo) {
+            if (this.isGameOver()) {
                 this.showText(this.offenseTeam === 'home' ? 'HOME WINS!' : 'AWAY WINS!');
             } else {
                 this.showText('SCORE!');
@@ -327,7 +480,7 @@ export class Match {
     }
 
     private handleScore(dt: number): void {
-        if (this.score[0] >= this.gameTo || this.score[1] >= this.gameTo) {
+        if (this.isGameOver()) {
             return;
         }
         this.phaseTimer += dt;
@@ -348,10 +501,24 @@ export class Match {
             this.offenseTeam === 'home' ? 'away' : 'home';
         this.lastScorerInfo = null;
 
-        // Teams switch ends after each score (USAU/WFDF rule)
-        const tmp = this.attackingEndzone.home;
-        this.attackingEndzone.home = this.attackingEndzone.away;
-        this.attackingEndzone.away = tmp;
+        // Check for halftime switch
+        if (this.checkHalf()) {
+            // Switch ends at half
+            const tmp = this.attackingEndzone.home;
+            this.attackingEndzone.home = this.attackingEndzone.away;
+            this.attackingEndzone.away = tmp;
+
+            // Reset timeouts for second half
+            this.timeoutsRemaining = [this.timeoutsPerHalf, this.timeoutsPerHalf];
+            this.currentHalf = 2;
+            this.halfElapsed = 0;
+            this.showText('HALFTIME');
+        } else {
+            // Teams switch ends after each score (USAU/WFDF rule)
+            const tmp = this.attackingEndzone.home;
+            this.attackingEndzone.home = this.attackingEndzone.away;
+            this.attackingEndzone.away = tmp;
+        }
 
         // Reset all players
         for (const p of [...homeTeam.players, ...awayTeam.players]) {

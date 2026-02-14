@@ -10,6 +10,8 @@ export class HUD {
     private helpHintEl: HTMLDivElement;
     private helpOverlayEl: HTMLDivElement;
     private spiritEl: HTMLDivElement;
+    private timeoutEl: HTMLDivElement;
+    private timeoutOverlayEl: HTMLDivElement;
     private helpVisible = false;
     private touchMode = false;
     private contextSignature = '';
@@ -122,6 +124,28 @@ export class HUD {
         this.spiritEl.textContent = 'Spirit 10/10';
         ui.appendChild(this.spiritEl);
 
+        // Timeout counters (near scoreboard)
+        this.timeoutEl = document.createElement('div');
+        this.timeoutEl.style.cssText =
+            'position:absolute;top:38px;left:50%;transform:translateX(-50%);' +
+            'display:flex;gap:14px;padding:4px 10px;border-radius:8px;' +
+            'background:rgba(5,16,30,0.78);border:1px solid rgba(255,255,255,0.18);' +
+            'font-family:monospace;font-size:11px;color:rgba(255,255,255,0.85);' +
+            'text-shadow:0 2px 6px rgba(0,0,0,0.5);letter-spacing:0.05em;';
+        this.timeoutEl.innerHTML = '';
+        ui.appendChild(this.timeoutEl);
+
+        // Full-screen timeout overlay
+        this.timeoutOverlayEl = document.createElement('div');
+        this.timeoutOverlayEl.style.cssText =
+            'position:absolute;inset:0;display:none;align-items:center;justify-content:center;' +
+            'background:rgba(4,10,18,0.65);backdrop-filter:blur(4px);z-index:42;pointer-events:none;';
+        this.timeoutOverlayEl.innerHTML =
+            '<div style="font-family:monospace;font-size:48px;font-weight:bold;color:white;' +
+            'text-shadow:0 6px 24px rgba(0,0,0,0.8),0 0 14px rgba(255,209,102,0.5);' +
+            'letter-spacing:0.12em;text-transform:uppercase;"></div>';
+        ui.appendChild(this.timeoutOverlayEl);
+
         window.addEventListener('keydown', this.onKeyDown);
         window.addEventListener('resize', this.onResize);
         this.applyResponsiveLayout();
@@ -215,6 +239,55 @@ export class HUD {
             `Spirit <span style="color:${color};font-weight:bold;">${clamped.toFixed(0)}</span>/10`;
     }
 
+    setTimeoutCount(homeTimeouts: number, awayTimeouts: number): void {
+        const dotStyle = (filled: boolean, color: string) =>
+            `display:inline-block;width:8px;height:8px;border-radius:50%;` +
+            `background:${filled ? color : 'rgba(255,255,255,0.2)'};` +
+            `border:1px solid ${filled ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.15)'};`;
+        const renderDots = (count: number, max: number, color: string) => {
+            let html = '';
+            for (let i = 0; i < max; i++) {
+                html += `<span style="${dotStyle(i < count, color)}"></span>`;
+            }
+            return html;
+        };
+        const homeInitials = getInitials(this.homeTeamName);
+        const awayInitials = getInitials(this.awayTeamName);
+        this.timeoutEl.innerHTML =
+            `<span style="display:flex;align-items:center;gap:4px;">` +
+            `<span style="color:${this.homeTeamColor};font-weight:bold;">${homeInitials}</span>` +
+            `<span style="display:flex;gap:3px;">${renderDots(homeTimeouts, 2, this.homeTeamColor)}</span>` +
+            `</span>` +
+            `<span style="color:rgba(255,255,255,0.35);">TO</span>` +
+            `<span style="display:flex;align-items:center;gap:4px;">` +
+            `<span style="display:flex;gap:3px;">${renderDots(awayTimeouts, 2, this.awayTeamColor)}</span>` +
+            `<span style="color:${this.awayTeamColor};font-weight:bold;">${awayInitials}</span>` +
+            `</span>`;
+    }
+
+    showTimeoutOverlay(teamName: string): void {
+        const inner = this.timeoutOverlayEl.firstElementChild as HTMLElement | null;
+        if (inner) inner.textContent = `TIMEOUT — ${teamName}`;
+        this.timeoutOverlayEl.style.display = 'flex';
+        // Pulse the timeout counter
+        this.timeoutEl.style.animation = 'none';
+        void this.timeoutEl.offsetHeight;
+        this.timeoutEl.style.animation = 'hud-timeout-pulse 0.6s ease 3';
+        // Inject keyframes once
+        if (!document.getElementById('hud-timeout-keyframes')) {
+            const style = document.createElement('style');
+            style.id = 'hud-timeout-keyframes';
+            style.textContent =
+                '@keyframes hud-timeout-pulse{0%,100%{transform:translateX(-50%) scale(1);opacity:0.85}50%{transform:translateX(-50%) scale(1.15);opacity:1}}';
+            document.head.appendChild(style);
+        }
+    }
+
+    hideTimeoutOverlay(): void {
+        this.timeoutOverlayEl.style.display = 'none';
+        this.timeoutEl.style.animation = '';
+    }
+
     setHelpVisible(visible: boolean): void {
         this.helpVisible = visible;
         this.helpOverlayEl.style.display = visible ? 'flex' : 'none';
@@ -245,6 +318,8 @@ export class HUD {
         this.helpHintEl.remove();
         this.helpOverlayEl.remove();
         this.spiritEl.remove();
+        this.timeoutEl.remove();
+        this.timeoutOverlayEl.remove();
     }
 
     private applyResponsiveLayout(): void {
@@ -282,6 +357,9 @@ export class HUD {
             this.spiritEl.style.top = isMobile ? '76px' : '82px';
             this.spiritEl.style.right = isMobile ? '8px' : '12px';
             this.spiritEl.style.fontSize = isMobile ? '10px' : '11px';
+
+            this.timeoutEl.style.top = isMobile ? '38px' : '42px';
+            this.timeoutEl.style.fontSize = isMobile ? '9px' : '10px';
 
             this.stallBar.style.top = isMobile ? '80px' : '84px';
             this.stallBar.style.width = isMobile ? '180px' : '200px';
@@ -324,6 +402,9 @@ export class HUD {
         this.spiritEl.style.top = '38px';
         this.spiritEl.style.right = '14px';
         this.spiritEl.style.fontSize = '11px';
+
+        this.timeoutEl.style.top = '38px';
+        this.timeoutEl.style.fontSize = '11px';
 
         this.stallBar.style.top = '56px';
         this.stallBar.style.width = '220px';

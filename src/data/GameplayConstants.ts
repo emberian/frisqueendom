@@ -120,6 +120,143 @@ export const ANIMATION_TIMINGS = {
     THROW_ANIMATION_DURATION: 0.5,
 };
 
+// ----- AI Strategy Constants -----
+
+// Horizontal stack lane spacing
+export const HSTACK_LANE_COUNT = 4;
+export const HSTACK_DEPTH_OFFSET = 15; // meters downfield from disc
+export const HSTACK_LANE_WIDTH_FACTOR = 0.6; // fraction of half-field width per lane edge
+
+// Zone 3-3-1 geometry
+export const ZONE_CUP_DEPTH = 3; // meters ahead of disc
+export const ZONE_CUP_WING_SPREAD = 3; // lateral offset for cup wings
+export const ZONE_MID_DEPTH = 12; // mids depth ahead of disc
+export const ZONE_MID_SPREAD_FACTOR = 0.45; // fraction of half-field for outer mids
+export const ZONE_DEEP_DEPTH = 25; // deep safety depth ahead of disc
+export const ZONE_SHIFT_X_WEIGHT = 0.4; // how much cup/mids track disc lateral position
+export const ZONE_SHIFT_Z_WEIGHT = 0.2; // how much cup/mids track disc depth
+
+// Zone offense
+export const ZONE_OFFENSE_SWING_THRESHOLD = 4; // seconds before swinging
+export const ZONE_OFFENSE_POPPER_DEPTH = 8; // meters downfield for popper
+export const ZONE_OFFENSE_WING_SPREAD = 0.42; // fraction of half-field for wing stretch
+export const ZONE_OFFENSE_CRASH_OPENNESS = 1.4; // openness threshold to crash
+
+// AI Difficulty Scaling
+export const AI_DIFFICULTY_PROFILES = {
+    // For "Rookie" difficulty (easy): opponents are bad, teammates are smart
+    rookie_opponent: {
+        reactionDelay: 0.22,
+        throwAccuracyVariance: 0.14,
+        readQuality: 0.35,
+        poachAggression: 0.06,
+        decisionThreshold: 0.15,
+        dropChance: 0.0,
+        missOpenChance: 0.0,
+    },
+    rookie_teammate: {
+        reactionDelay: 0.06,
+        throwAccuracyVariance: 0.02,
+        readQuality: 0.9,
+        poachAggression: 0.18,
+        decisionThreshold: 0.04,
+        dropChance: 0.0,
+        missOpenChance: 0.0,
+    },
+    // For "Pro" difficulty (normal): both sides competent
+    pro: {
+        reactionDelay: 0.10,
+        throwAccuracyVariance: 0.05,
+        readQuality: 0.65,
+        poachAggression: 0.14,
+        decisionThreshold: 0.08,
+        dropChance: 0.0,
+        missOpenChance: 0.0,
+    },
+    // For "Legend" difficulty (hard): teammates make mistakes, opponents are elite
+    legend_opponent: {
+        reactionDelay: 0.04,
+        throwAccuracyVariance: 0.01,
+        readQuality: 0.95,
+        poachAggression: 0.32,
+        decisionThreshold: 0.02,
+        dropChance: 0.0,
+        missOpenChance: 0.0,
+    },
+    legend_teammate: {
+        reactionDelay: 0.14,
+        throwAccuracyVariance: 0.08,
+        readQuality: 0.5,
+        poachAggression: 0.10,
+        decisionThreshold: 0.12,
+        dropChance: 0.04,
+        missOpenChance: 0.06,
+    },
+};
+
+// AI Personality Archetypes
+export type AIArchetype = 'captain' | 'gunslinger' | 'grinder' | 'athlete' | 'rookie_player' | 'veteran';
+
+export interface ArchetypeProfile {
+    aggression: number; // 0-1
+    disc_iq: number; // 0-1
+    discipline: number; // 0-1
+    throwBias: number; // positive = favor risky throws, negative = favor safe
+    cutTimingVariance: number; // higher = more inconsistent cuts
+    decisionSpeedMult: number; // multiplier on decision interval
+}
+
+export const ARCHETYPE_PROFILES: Record<AIArchetype, ArchetypeProfile> = {
+    captain: {
+        aggression: 0.5,
+        disc_iq: 0.9,
+        discipline: 0.8,
+        throwBias: -0.05,
+        cutTimingVariance: 0.06,
+        decisionSpeedMult: 0.92,
+    },
+    gunslinger: {
+        aggression: 0.9,
+        disc_iq: 0.5,
+        discipline: 0.3,
+        throwBias: 0.25,
+        cutTimingVariance: 0.12,
+        decisionSpeedMult: 0.80,
+    },
+    grinder: {
+        aggression: 0.3,
+        disc_iq: 0.7,
+        discipline: 0.95,
+        throwBias: -0.15,
+        cutTimingVariance: 0.04,
+        decisionSpeedMult: 1.05,
+    },
+    athlete: {
+        aggression: 0.75,
+        disc_iq: 0.35,
+        discipline: 0.5,
+        throwBias: 0.10,
+        cutTimingVariance: 0.14,
+        decisionSpeedMult: 0.85,
+    },
+    rookie_player: {
+        aggression: 0.5,
+        disc_iq: 0.3,
+        discipline: 0.3,
+        throwBias: 0.05,
+        cutTimingVariance: 0.20,
+        decisionSpeedMult: 1.15,
+    },
+    veteran: {
+        aggression: 0.5,
+        disc_iq: 0.92,
+        discipline: 0.82,
+        throwBias: -0.08,
+        cutTimingVariance: 0.03,
+        decisionSpeedMult: 0.95,
+    },
+};
+
 // Spirit scoring
 export const SPIRIT_DEFAULTS = {
     RULES_KNOWLEDGE: 2,

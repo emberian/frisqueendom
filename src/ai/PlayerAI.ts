@@ -4,11 +4,17 @@ import {
     evaluateOpenness,
     computeLeadPass,
     computeCutTarget,
+    computeHStackIsolationCut,
 } from './Offense';
 import { computeDefensivePosition, shouldContestCatch } from './Defense';
 import { computeMarkPosition } from './Marking';
 import type { ThrowParams } from '../data/Types';
-import { THROW_CONFIGS } from '../data/GameplayConstants';
+import {
+    THROW_CONFIGS,
+    AI_DIFFICULTY_PROFILES,
+    ARCHETYPE_PROFILES,
+} from '../data/GameplayConstants';
+import type { AIArchetype, ArchetypeProfile } from '../data/GameplayConstants';
 import type { ThrowType } from '../gameplay/Throw';
 import { Random } from '../data/SeededRandom';
 
@@ -37,6 +43,34 @@ export interface ReceiverEvaluation {
     selected: boolean;
 }
 
+/** Difficulty scaling profile passed into decision functions */
+export interface DifficultyScaling {
+    reactionDelay: number;
+    throwAccuracyVariance: number;
+    readQuality: number;
+    poachAggression: number;
+    decisionThreshold: number;
+    dropChance: number;
+    missOpenChance: number;
+}
+
+/**
+ * Get a difficulty scaling profile by name.
+ * Used by TeamAI to pass the right profile for teammates vs opponents.
+ */
+export function getDifficultyScaling(
+    key: keyof typeof AI_DIFFICULTY_PROFILES,
+): DifficultyScaling {
+    return { ...AI_DIFFICULTY_PROFILES[key] };
+}
+
+/**
+ * Get an archetype profile by name.
+ */
+export function getArchetypeProfile(archetype: AIArchetype): ArchetypeProfile {
+    return ARCHETYPE_PROFILES[archetype];
+}
+
 export function decideOffenseWithDisc(
     player: Player,
     teammates: Player[],
@@ -46,11 +80,20 @@ export function decideOffenseWithDisc(
     windSpeed: number = 0,
     windDir: number = 0,
     evalBuffer?: ReceiverEvaluation[],
+    scaling?: DifficultyScaling,
+    archetype?: ArchetypeProfile,
 ): AIAction {
     let bestReceiver: Player | null = null;
     let bestScore = -Infinity;
     let bestOpenness = 0;
     const attackDir = attackingEndzone === 0 ? -1 : 1;
+
+    // Archetype bias: gunslingers throw earlier, grinders wait
+    const throwBias = archetype?.throwBias ?? 0;
+    // Difficulty scaling: readQuality affects how well AI evaluates options
+    const readQualityMod = scaling?.readQuality ?? 0.65;
+    // Miss open receivers at legend difficulty for teammates
+    const missOpenChance = scaling?.missOpenChance ?? 0;
 
     let nearestDef: Player | null = null;
     let nearestDefDist = Infinity;
@@ -70,6 +113,10 @@ export function decideOffenseWithDisc(
 
     for (const tm of teammates) {
         if (tm === player || tm.holdingDisc) continue;
+
+        // Legend teammate: occasionally miss seeing an open target
+        if (missOpenChance > 0 && Random.next() < missOpenChance) continue;
+
         const openness = evaluateOpenness(
             player,
             tm,
@@ -98,16 +145,22 @@ export function decideOffenseWithDisc(
         const resetBonus = stallCount >= 6 && yardGain < 4 ? 0.22 : 0;
         const bailoutBonus = stallCount >= 8 ? 0.18 : 0;
 
+        // Read quality scales how much openness matters vs noise
+        const opennessWeight = 0.35 + readQualityMod * 0.15;
+        const noiseScale = Math.max(0, 0.12 * (1 - readQualityMod));
+        const readNoise = (Random.next() - 0.5) * noiseScale;
+
         const score =
-            openness * 0.45 +
-            gainScore * 0.2 +
+            openness * opennessWeight +
+            gainScore * (0.2 + throwBias * 0.1) +
             receiverSkill * 0.16 +
             throwerSkill * 0.12 +
             resetBonus +
             bailoutBonus -
             difficultyPenalty * 0.22 -
             windPenalty * 0.12 -
-            pressurePenalty;
+            pressurePenalty +
+            readNoise;
 
         if (evalBuffer) {
             evalBuffer.push({
@@ -130,8 +183,10 @@ export function decideOffenseWithDisc(
         if (entry) entry.selected = true;
     }
 
-    const threshold =
+    // Archetype throwBias lowers threshold (gunslinger throws earlier)
+    const baseThreshold =
         stallCount < 3 ? 0.08 : stallCount < 5 ? -0.05 : stallCount < 7 ? -0.2 : -0.5;
+    const threshold = baseThreshold - throwBias * 0.12 - (scaling?.decisionThreshold ?? 0.08) * 0.5;
     if (!bestReceiver || (bestScore < threshold && stallCount < 8)) {
         return { type: 'none' };
     }
@@ -223,11 +278,17 @@ export function decideOffenseWithoutDisc(
     cutTimer: number,
     attackingEndzone: number,
     defenders: Player[],
+    hstackLaneIndex?: number,
+    archetype?: ArchetypeProfile,
 ): AIAction {
     if (!isActiveCutter) {
         // Hold stack position
         return { type: 'none' };
     }
+
+    // Archetype cut timing variance: rookies clear too early/late
+    const cutTimingVariance = archetype?.cutTimingVariance ?? 0;
+    const clearThreshold = 2.5 + (Random.next() - 0.5) * cutTimingVariance * 4;
 
     // Find nearest defender
     let nearestDef: Player | null = null;
@@ -240,11 +301,24 @@ export function decideOffenseWithoutDisc(
         }
     }
 
-    if (cutTimer > 2.5) {
-        // Clear out - run to far side
+    if (cutTimer > clearThreshold) {
+        // Clear out - jog (not sprint) to far side to conserve energy
         const clearX =
             player.movement.position.x > 0 ? -15 : 15;
         _target.set(clearX, 0, player.movement.position.z);
+        return { type: 'move', target: _target, sprint: false };
+    }
+
+    // --- Pre-cut deceleration: brief pause/deceleration before cutting ---
+    // For the first ~0.4s of the cut, slow down to "sell the fake"
+    const preCutDelay = 0.4;
+    if (cutTimer < preCutDelay) {
+        // Stand still or drift slightly to sell the jab step
+        // Use a slow drift in the opposite direction of the eventual cut
+        _target.copy(player.movement.position);
+        // Small backward drift (opposite to disc) to simulate a fake
+        const dir = attackingEndzone === 0 ? -1 : 1;
+        _target.z += dir * 1.5; // drift slightly deeper to fake deep then cut under
         return { type: 'move', target: _target, sprint: false };
     }
 
@@ -260,6 +334,23 @@ export function decideOffenseWithoutDisc(
         ) {
             cutType = 'deep';
         }
+    }
+
+    // Low disc_iq archetype: sometimes pick the wrong cut direction
+    if (archetype && archetype.disc_iq < 0.4 && Random.next() < 0.15) {
+        cutType = cutType === 'in' ? 'deep' : 'in';
+    }
+
+    // Horizontal stack: use lane-based isolation cut
+    if (hstackLaneIndex !== undefined && hstackLaneIndex >= 0) {
+        const target = computeHStackIsolationCut(
+            player,
+            hstackLaneIndex,
+            discPos,
+            attackingEndzone,
+            cutType,
+        );
+        return { type: 'move', target, sprint: true };
     }
 
     const target = computeCutTarget(
@@ -281,7 +372,14 @@ export function decideDefense(
     discInFlight: boolean = false,
     poachChance: number = 0.12,
     forceSide: number = 1,
+    scaling?: DifficultyScaling,
+    attackingEndzone: number = 0,
 ): AIAction {
+    // Difficulty-scaled poach aggression
+    const effectivePoachChance = scaling
+        ? poachChance * (0.5 + scaling.poachAggression * 3.5)
+        : poachChance;
+
     if (!mark) {
         if (discInFlight && player.movement.position.distanceTo(discPos) < 5) {
             return { type: 'move', target: discPos, sprint: true };
@@ -311,9 +409,9 @@ export function decideDefense(
                     .multiplyScalar(proj)
                     .add(discHolder.movement.position);
                 const laneDist = player.movement.position.distanceTo(_closestLane);
-                const poachWindow = 1.25 + poachChance * 0.9;
+                const poachWindow = 1.25 + effectivePoachChance * 0.9;
                 const poachRoll =
-                    poachChance + Math.min(0.18, stallCount * 0.015);
+                    effectivePoachChance + Math.min(0.18, stallCount * 0.015);
                 if (laneDist < poachWindow && Random.next() < poachRoll) {
                     const intercept = _closestLane
                         .clone()
@@ -324,10 +422,22 @@ export function decideDefense(
         }
     }
 
-    const defPos = computeDefensivePosition(mark, discPos);
+    const defPos = computeDefensivePosition(mark, discPos, forceSide, attackingEndzone);
     const dist = player.movement.position.distanceTo(mark.movement.position);
     const sprint = dist > 2.5;
     return { type: 'move', target: defPos, sprint };
+}
+
+// Collision avoidance: nearby player list is set per-frame by TeamAI
+let _nearbyPlayers: Player[] = [];
+const _avoidance = new THREE.Vector3();
+
+/**
+ * Set the list of nearby teammates for collision avoidance.
+ * Called once per frame by TeamAI before individual player updates.
+ */
+export function setNearbyPlayersForAvoidance(players: Player[]): void {
+    _nearbyPlayers = players;
 }
 
 export function moveToward(
@@ -345,10 +455,46 @@ export function moveToward(
         return;
     }
 
+    // Base movement direction
+    let dirX = _temp.x / dist;
+    let dirZ = _temp.z / dist;
+
+    // --- Collision avoidance: repel from nearby teammates ---
+    const avoidRadius = 2.5; // Start avoiding when within 2.5m
+    const avoidStrength = 3.0; // Strength of avoidance push
+    _avoidance.set(0, 0, 0);
+    for (const other of _nearbyPlayers) {
+        if (other === player || other.holdingDisc) continue;
+        const dx = player.movement.position.x - other.movement.position.x;
+        const dz = player.movement.position.z - other.movement.position.z;
+        const dSq = dx * dx + dz * dz;
+        if (dSq < avoidRadius * avoidRadius && dSq > 0.01) {
+            const d = Math.sqrt(dSq);
+            // Inverse-linear repulsion: stronger when closer
+            const force = (avoidRadius - d) / avoidRadius * avoidStrength;
+            _avoidance.x += (dx / d) * force;
+            _avoidance.z += (dz / d) * force;
+        }
+    }
+
+    // Blend avoidance into movement direction
+    const avoidLen = Math.sqrt(_avoidance.x * _avoidance.x + _avoidance.z * _avoidance.z);
+    if (avoidLen > 0.01) {
+        // Avoidance is weighted less than target direction, but enough to prevent stacking
+        const avoidWeight = Math.min(0.6, avoidLen * 0.3);
+        dirX = dirX * (1 - avoidWeight) + (_avoidance.x / avoidLen) * avoidWeight;
+        dirZ = dirZ * (1 - avoidWeight) + (_avoidance.z / avoidLen) * avoidWeight;
+        // Re-normalize
+        const len = Math.sqrt(dirX * dirX + dirZ * dirZ);
+        if (len > 0.01) {
+            dirX /= len;
+            dirZ /= len;
+        }
+    }
+
     // Don't sprint when stamina is low
     const canSprint = sprint && player.movement.stamina > 10;
-    const dir = { x: _temp.x / dist, z: _temp.z / dist };
-    player.movement.update(dt, dir, canSprint);
+    player.movement.update(dt, { x: dirX, z: dirZ }, canSprint);
 }
 
 /**

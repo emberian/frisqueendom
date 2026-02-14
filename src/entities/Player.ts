@@ -142,7 +142,11 @@ export class Player {
     // Trigger throw animation
     startThrow(throwType?: string): void {
         if (throwType) {
-            this.lastThrowType = throwType as typeof this.lastThrowType;
+            // Map throw types that lack unique animations to their closest equivalent
+            const mapped = throwType === 'thumber' ? 'hammer'
+                : throwType === 'blade' ? 'forehand'
+                : throwType as typeof this.lastThrowType;
+            this.lastThrowType = mapped;
         }
         this.setAnimState('throw');
     }
@@ -329,11 +333,6 @@ export class Player {
         }
     }
     
-    private getThrowType(): 'backhand' | 'forehand' | 'hammer' {
-        // This would be set by the throw controller
-        return 'backhand';
-    }
-
     distanceTo(point: THREE.Vector3): number {
         return this.movement.position.distanceTo(point);
     }
@@ -342,7 +341,7 @@ export class Player {
         _tempVec.copy(_handOffset);
         _tempVec.applyAxisAngle(_up, this.movement.facing);
         _tempVec.add(this.movement.position);
-        return _tempVec.clone(); // Still cloning here to return a safe instance, but we could return _tempVec if we were careful
+        return _tempVec;
     }
 
     private remoteAnim: string | null = null;

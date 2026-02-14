@@ -6,8 +6,10 @@ import {
     computeStackPositions,
     computeHorizontalStackPositions,
     computeHandlerPositions,
+    computeZoneOffensePositions,
+    computeZoneOffenseHandlerPositions,
 } from './Offense';
-import { assignMatchups, assignZone331Positions } from './Defense';
+import { assignMatchups, assignZone331Positions, detectZoneDefense } from './Defense';
 import type { OffenseFormation, DefenseFormation } from '../data/Types';
 import {
     decideOffenseWithDisc,
@@ -15,14 +17,19 @@ import {
     decideDefense,
     moveToward,
     findBestIntercept,
+    getDifficultyScaling,
+    getArchetypeProfile,
+    setNearbyPlayersForAvoidance,
 } from './PlayerAI';
-import type { ReceiverEvaluation } from './PlayerAI';
+import type { ReceiverEvaluation, DifficultyScaling } from './PlayerAI';
+import type { ArchetypeProfile, AIArchetype } from '../data/GameplayConstants';
+import { ARCHETYPE_PROFILES } from '../data/GameplayConstants';
 import { updateMarkMirror } from './Marking';
 import type { ThrowParams } from '../data/Types';
 import type { DiscBridge } from '../physics/DiscBridge';
 import { Random } from '../data/SeededRandom';
 import type { Formation, Play } from '../data/SaveLoad';
-import { FIELD_WIDTH } from '../data/Constants';
+import { FIELD_WIDTH, FIELD_LENGTH } from '../data/Constants';
 
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
 export type AIPersonality =
@@ -183,6 +190,25 @@ export class TeamAI {
     private _debugSnapshot: DebugSnapshot | null = null;
     private _lastDebugEvals: ReceiverEvaluation[] = [];
     private _lastDebugLeadTarget: THREE.Vector3 | null = null;
+
+    // Handler repositioning timer (oscillates to create continuous movement)
+    private handlerDriftTimer = 0;
+
+    // --- Feature: isPlayerTeam flag for difficulty scaling ---
+    private isPlayerTeam = false;
+    // Difficulty scaling profiles (computed from difficulty + isPlayerTeam)
+    private offenseScaling: DifficultyScaling = getDifficultyScaling('pro');
+    private defenseScaling: DifficultyScaling = getDifficultyScaling('pro');
+
+    // --- Feature: Zone offense detection ---
+    private facingZoneDefense = false;
+    private zoneDetectTimer = 0;
+
+    // --- Feature: AI Personality Archetypes ---
+    // Per-player archetype assignments (player index -> archetype)
+    private playerArchetypes = new Map<number, AIArchetype>();
+    // Cached archetype profiles
+    private playerArchetypeProfiles = new Map<number, ArchetypeProfile>();
     private baseProfile: AIDifficultyProfile = {
         decisionInterval: 0.1,
         activeCutDuration: 3.0,
@@ -206,6 +232,7 @@ export class TeamAI {
 
     setDifficulty(level: AIDifficulty): void {
         this.difficultyLevel = level;
+        this.updateDifficultyScaling();
         if (level === 'easy') {
             this.baseProfile = {
                 decisionInterval: 0.18,
@@ -250,6 +277,89 @@ export class TeamAI {
         };
         this.applyPersonalityToProfile();
         this.rollTendencyProfile(level);
+    }
+
+    /**
+     * Set whether this AI controls the player's team (true) or the opponent (false).
+     * This determines difficulty scaling direction:
+     * - Rookie: player team = smart AI teammates, opponent = dumb
+     * - Legend: player team = mistake-prone teammates, opponent = elite
+     */
+    setIsPlayerTeam(isPlayer: boolean): void {
+        this.isPlayerTeam = isPlayer;
+        this.updateDifficultyScaling();
+    }
+
+    /**
+     * Assign an archetype to a specific player by index.
+     * Archetypes influence decision weights for that player.
+     */
+    setPlayerArchetype(playerIndex: number, archetype: AIArchetype): void {
+        this.playerArchetypes.set(playerIndex, archetype);
+        this.playerArchetypeProfiles.set(playerIndex, getArchetypeProfile(archetype));
+    }
+
+    /**
+     * Get the archetype assigned to a player, if any.
+     */
+    getPlayerArchetype(playerIndex: number): AIArchetype | null {
+        return this.playerArchetypes.get(playerIndex) ?? null;
+    }
+
+    /**
+     * Auto-assign archetypes to all players based on their stats.
+     * Maps stat profiles to the closest matching archetype.
+     */
+    autoAssignArchetypes(players: Player[]): void {
+        for (const player of players) {
+            if (player.isControlled) continue;
+            const archetype = this.inferArchetype(player);
+            this.setPlayerArchetype(player.index, archetype);
+        }
+    }
+
+    private inferArchetype(player: Player): AIArchetype {
+        if (!player.stats) return 'grinder';
+
+        const speed = player.stats.getEffectiveStat('speed');
+        const throwAcc = player.stats.getEffectiveStat('throwAccuracy');
+        const awareness = player.stats.getEffectiveStat('awareness');
+        const catching = player.stats.getEffectiveStat('catching');
+        const marking = player.stats.getEffectiveStat('marking');
+
+        // Simple heuristic mapping
+        const physicalScore = speed + catching;
+        const mentalScore = awareness + throwAcc;
+        const defenseScore = marking + speed;
+        const overall = (physicalScore + mentalScore + defenseScore) / 6;
+
+        if (overall < 35) return 'rookie_player';
+        if (awareness > 80 && throwAcc > 75 && marking > 60) return 'captain';
+        if (speed > 80 && catching > 70 && awareness < 50) return 'athlete';
+        if (throwAcc > 80 && awareness < 55) return 'gunslinger';
+        if (awareness > 70 && marking > 65 && speed < 60) return 'veteran';
+        if (awareness > 60 && marking > 55) return 'grinder';
+        return 'grinder';
+    }
+
+    private updateDifficultyScaling(): void {
+        if (this.difficultyLevel === 'easy') {
+            // Rookie: player's AI teammates are smart, opponents are bad
+            this.offenseScaling = getDifficultyScaling(
+                this.isPlayerTeam ? 'rookie_teammate' : 'rookie_opponent');
+            this.defenseScaling = getDifficultyScaling(
+                this.isPlayerTeam ? 'rookie_teammate' : 'rookie_opponent');
+        } else if (this.difficultyLevel === 'hard') {
+            // Legend: player's AI teammates make mistakes, opponents are elite
+            this.offenseScaling = getDifficultyScaling(
+                this.isPlayerTeam ? 'legend_teammate' : 'legend_opponent');
+            this.defenseScaling = getDifficultyScaling(
+                this.isPlayerTeam ? 'legend_teammate' : 'legend_opponent');
+        } else {
+            // Pro: balanced
+            this.offenseScaling = getDifficultyScaling('pro');
+            this.defenseScaling = getDifficultyScaling('pro');
+        }
     }
 
     setPersonality(personality: AIPersonality): void {
@@ -391,6 +501,26 @@ export class TeamAI {
         const defenders = opponentTeam.players;
         const dir = attackingEndzone === 0 ? -1 : 1;
 
+        // Set collision avoidance context for all players on this team
+        setNearbyPlayersForAvoidance(team.players);
+
+        // Advance handler drift timer for continuous repositioning
+        this.handlerDriftTimer += dt;
+
+        // --- Zone defense detection (check every 2 seconds) ---
+        this.zoneDetectTimer += dt;
+        if (this.zoneDetectTimer > 2.0) {
+            this.zoneDetectTimer = 0;
+            this.facingZoneDefense = detectZoneDefense(
+                defenders, team.players, discPos);
+        }
+
+        // Determine effective formation: if facing zone defense, use zone offense
+        const useZoneOffense = this.facingZoneDefense && !this.customFormation;
+        const useHStack = !useZoneOffense &&
+            this.formation === 'horizontal_stack' &&
+            !(this.customFormation && this.customFormation.length > 0);
+
         const stackPos =
             this.customFormation && this.customFormation.length > 0
                 ? this.customFormation
@@ -403,7 +533,9 @@ export class TeamAI {
                                   discPos.z - dir * position.z,
                               ),
                       )
-                : this.formation === 'horizontal_stack'
+                : useZoneOffense
+                ? computeZoneOffensePositions(discPos, attackingEndzone)
+                : useHStack
                 ? computeHorizontalStackPositions(discPos, attackingEndzone)
                 : computeStackPositions(discPos, attackingEndzone);
         const handlerPos =
@@ -418,6 +550,8 @@ export class TeamAI {
                                   discPos.z - dir * position.z,
                               ),
                       )
+                : useZoneOffense
+                ? computeZoneOffenseHandlerPositions(discPos, attackingEndzone)
                 : computeHandlerPositions(discPos, attackingEndzone);
         if (stackPos.length === 0) {
             stackPos.push(...computeStackPositions(discPos, attackingEndzone));
@@ -523,7 +657,12 @@ export class TeamAI {
                 // STAGGERED: only check every N frames, and offset by player index
                 const staggerFrame = (Math.floor(this.decisionTimer * 60) + player.index) % 6 === 0;
                 
-                if (staggerFrame && this.decisionTimer > decisionWindow) {
+                // Apply archetype decision speed multiplier
+                const archetypeProfile = this.playerArchetypeProfiles.get(player.index);
+                const archetypeDecisionMult = archetypeProfile?.decisionSpeedMult ?? 1.0;
+                const effectiveDecisionWindow = decisionWindow * archetypeDecisionMult;
+
+                if (staggerFrame && this.decisionTimer > effectiveDecisionWindow) {
                     this.decisionTimer = 0;
                     const newEvals: ReceiverEvaluation[] = [];
                     const action = decideOffenseWithDisc(
@@ -535,6 +674,8 @@ export class TeamAI {
                         windSpeed,
                         windDir,
                         this.debugEnabled ? newEvals : undefined,
+                        this.offenseScaling,
+                        archetypeProfile,
                     );
                     if (action.type === 'throw' && action.throwParams) {
                         const corrected = action.leadTarget
@@ -593,23 +734,89 @@ export class TeamAI {
                 const baseTarget =
                     handlerPos[Math.max(0, roleIndex) % handlerPos.length];
                 const handlerTarget = baseTarget.clone();
+
+                // --- Active handler repositioning ---
+                // Find the current thrower
+                const thrower = team.players.find(p => p.holdingDisc) ?? null;
+                const halfW = FIELD_WIDTH / 2;
+
+                if (thrower && roleIndex >= 0) {
+                    const throwerPos = thrower.movement.position;
+
+                    if (roleIndex === 0) {
+                        // DUMP HANDLER: Stay 5-8m behind the thrower, continuously
+                        // shifting laterally to maintain an open dump lane.
+                        // Oscillate laterally using the drift timer for "live" movement.
+                        const dumpDepth = 6.5;
+                        const dumpZ = throwerPos.z - dir * dumpDepth;
+                        // Lateral drift: oscillate to stay open, period ~3s
+                        const lateralDrift = Math.sin(this.handlerDriftTimer * 2.1) * 3.5;
+                        // Bias toward the break side (opposite of disc's X from center)
+                        const breakBias = -Math.sign(throwerPos.x || 1) * 1.5;
+                        handlerTarget.x = THREE.MathUtils.clamp(
+                            throwerPos.x + lateralDrift + breakBias,
+                            -halfW * 0.44,
+                            halfW * 0.44,
+                        );
+                        handlerTarget.z = Math.max(2, Math.min(FIELD_LENGTH - 2, dumpZ));
+                    } else if (roleIndex === 1) {
+                        // SWING HANDLER: Drift toward the break side to be available
+                        // for break-side swing throws. Continuous gentle movement.
+                        const swingDepth = 4.5;
+                        const swingZ = throwerPos.z - dir * swingDepth;
+                        // Break side: opposite of the force side, with gentle oscillation
+                        const breakSideX = -Math.sign(throwerPos.x || 1) * halfW * 0.32;
+                        const swingDrift = Math.sin(this.handlerDriftTimer * 1.7 + 1.2) * 2.0;
+                        handlerTarget.x = THREE.MathUtils.clamp(
+                            breakSideX + swingDrift,
+                            -halfW * 0.44,
+                            halfW * 0.44,
+                        );
+                        handlerTarget.z = Math.max(2, Math.min(FIELD_LENGTH - 2, swingZ));
+                    }
+                    // roleIndex === 2 (third handler) uses the static base position
+                }
+
                 if (sidelinePressure) {
                     const centerBias = -discPos.x * (0.42 + this.tendency.widthBias * 0.2);
                     handlerTarget.x = THREE.MathUtils.clamp(
                         handlerTarget.x * 0.45 + centerBias * 0.55,
-                        -FIELD_WIDTH * 0.45,
-                        FIELD_WIDTH * 0.45,
+                        -halfW * 0.45,
+                        halfW * 0.45,
                     );
                     if (stallCount >= 5) {
                         handlerTarget.z -= dir * 2.5;
                     }
                 }
+
+                // --- Repulsion from nearby teammates for handler spacing ---
+                for (const other of team.players) {
+                    if (other === player || other.holdingDisc) continue;
+                    const dx = handlerTarget.x - other.movement.position.x;
+                    const dz = handlerTarget.z - other.movement.position.z;
+                    const dSq = dx * dx + dz * dz;
+                    const minSep = 3.5; // handlers shouldn't be closer than 3.5m
+                    if (dSq < minSep * minSep && dSq > 0.01) {
+                        const d = Math.sqrt(dSq);
+                        const push = (minSep - d) * 0.5;
+                        handlerTarget.x += (dx / d) * push;
+                        handlerTarget.z += (dz / d) * push;
+                    }
+                }
+                handlerTarget.x = THREE.MathUtils.clamp(handlerTarget.x, -halfW * 0.47, halfW * 0.47);
+                handlerTarget.z = Math.max(2, Math.min(FIELD_LENGTH - 2, handlerTarget.z));
+
                 moveToward(player, handlerTarget, dt, stallCount >= 8);
                 player.update(dt, null);
                 continue;
             }
 
             if (activeCutterIndices.has(player.index)) {
+                // Horizontal stack: pass lane index for isolation cuts
+                const hstackLane = useHStack
+                    ? cutters.indexOf(player) % 4
+                    : undefined;
+                const cutterArchetype = this.playerArchetypeProfiles.get(player.index);
                 const action = decideOffenseWithoutDisc(
                     player,
                     discPos,
@@ -617,6 +824,8 @@ export class TeamAI {
                     cutTimer,
                     attackingEndzone,
                     defenders,
+                    hstackLane,
+                    cutterArchetype,
                 );
                 if (action.type === 'move' && action.target) {
                     if (this.debugEnabled) {
@@ -656,8 +865,26 @@ export class TeamAI {
                     );
                     moveToward(player, weakFlood, dt, cIdx === 0);
                 } else {
-                    const target = stackPos[Math.max(0, cIdx) % stackPos.length];
-                    moveToward(player, target, dt, false);
+                    const baseStackTarget = stackPos[Math.max(0, cIdx) % stackPos.length];
+                    // Apply active repulsion from nearby teammates to prevent bunching
+                    const repulsedTarget = new THREE.Vector3().copy(baseStackTarget);
+                    for (const other of team.players) {
+                        if (other === player || other.holdingDisc) continue;
+                        const dx = repulsedTarget.x - other.movement.position.x;
+                        const dz = repulsedTarget.z - other.movement.position.z;
+                        const dSq = dx * dx + dz * dz;
+                        const minSep = 4.0; // cutters should maintain 4m minimum separation
+                        if (dSq < minSep * minSep && dSq > 0.01) {
+                            const d = Math.sqrt(dSq);
+                            const push = (minSep - d) * 0.4;
+                            repulsedTarget.x += (dx / d) * push;
+                            repulsedTarget.z += (dz / d) * push;
+                        }
+                    }
+                    const halfW = FIELD_WIDTH / 2;
+                    repulsedTarget.x = Math.max(-halfW * 0.47, Math.min(halfW * 0.47, repulsedTarget.x));
+                    repulsedTarget.z = Math.max(2, Math.min(FIELD_LENGTH - 2, repulsedTarget.z));
+                    moveToward(player, repulsedTarget, dt, false);
                 }
             }
 
@@ -700,6 +927,9 @@ export class TeamAI {
         const discHolder = opponentTeam.getHolder() || null;
         const availableDefenders = team.players.filter((p) => !p.isControlled);
         this.updateForceSide(dt, discPos, stallCount);
+
+        // Set collision avoidance context for all defenders
+        setNearbyPlayersForAvoidance(team.players);
 
         if (this.defenseType === 'zone_331') {
             this.lastHelpDefenderIndex = null;
@@ -799,9 +1029,11 @@ export class TeamAI {
                 isMarker,
                 stallCount,
                 disc.state === 'in_flight',
-                this.profile.poachChance *
-                    (0.85 + this.tendency.defenseFlex * 0.5),
+                Math.min(1, this.profile.poachChance *
+                    (0.85 + this.tendency.defenseFlex * 0.5)),
                 this.forceSide,
+                this.defenseScaling,
+                attackingEndzone,
             );
 
             if (action.type === 'move' && action.target) {
@@ -885,6 +1117,20 @@ export class TeamAI {
         this.activeCutterIdx = primary.index;
         active.add(primary.index);
 
+        // --- Cut-and-clear overlap ---
+        // When the primary cutter is approaching their clear threshold,
+        // activate the next best cutter slightly early for smooth flow.
+        // This creates the continuous cutting pattern seen in real ultimate.
+        if (current) {
+            const currentTimer = this.cutTimers.get(current) || 0;
+            const clearThreshold = 2.5;
+            const overlapWindow = 0.4; // start next cut 0.4s before current clears
+            if (currentTimer > clearThreshold - overlapWindow && scored[1]) {
+                // Next cutter should begin their approach
+                active.add(scored[1].cutter.index);
+            }
+        }
+
         const tempoBonus =
             (this.tendency.tempo - 0.95) * 0.18 +
             (this.tendency.aggression - 0.5) * 0.08;
@@ -961,8 +1207,19 @@ export class TeamAI {
             0,
             1.0,
         );
-        const crowdPenalty =
-            nearestCutterDist < 3.6 ? (3.6 - nearestCutterDist) * 0.18 : 0;
+        // Crowd penalty: players within 5m of each other are heavily penalized.
+        // Quadratic falloff makes close bunching much more costly than distant players.
+        const crowdThreshold = 5.0;
+        let crowdPenalty = 0;
+        for (const other of cutters) {
+            if (other === cutter) continue;
+            const d = other.movement.position.distanceTo(cutter.movement.position);
+            if (d < crowdThreshold) {
+                // Quadratic: being 1m apart = (4/5)^2 * 0.6 = 0.384 penalty per neighbor
+                const ratio = (crowdThreshold - d) / crowdThreshold;
+                crowdPenalty += ratio * ratio * 0.6;
+            }
+        }
         const sidelinePenalty =
             sidelinePressure &&
             Math.sign(cutter.movement.position.x || 1) ===
@@ -1474,6 +1731,9 @@ export class TeamAI {
         this.reassignTimer = this.profile.reassignInterval + 1;
         this.decisionTimer = 0;
         this.activeCutterIdx = 3;
+        this.facingZoneDefense = false;
+        this.zoneDetectTimer = 0;
+        this.handlerDriftTimer = 0;
         this.rollTendencyProfile(this.difficultyLevel);
     }
 }

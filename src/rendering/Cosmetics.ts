@@ -5,6 +5,15 @@ export interface PlayerCosmetic {
     hasHeadband: boolean;
     headbandColor: number;
     hasWristbands: boolean;
+    height?: number;       // 0.85-1.15 multiplier
+}
+
+export interface CosmeticTarget {
+    setHeadShape?(shape: string): void;
+    setHeadSize?(size: number): void;
+    setHeadband?(enabled: boolean, color: number): void;
+    setWristbands?(enabled: boolean): void;
+    setHeight?(multiplier: number): void;
 }
 
 export const DEFAULT_COSMETIC: PlayerCosmetic = {
@@ -32,6 +41,7 @@ export const COSMETIC_PRESETS: Record<string, PlayerCosmetic> = {
         hasHeadband: true,
         headbandColor: 0xFF0000,
         hasWristbands: true,
+        height: 1.1,
     },
     Slim: {
         headShape: 'circle',
@@ -40,6 +50,7 @@ export const COSMETIC_PRESETS: Record<string, PlayerCosmetic> = {
         hasHeadband: false,
         headbandColor: 0xFFFFFF,
         hasWristbands: false,
+        height: 0.9,
     },
     Captain: {
         headShape: 'circle',
@@ -48,6 +59,7 @@ export const COSMETIC_PRESETS: Record<string, PlayerCosmetic> = {
         hasHeadband: true,
         headbandColor: 0xFFD700,
         hasWristbands: true,
+        height: 1.05,
     },
     Rookie: {
         headShape: 'triangle',
@@ -56,19 +68,18 @@ export const COSMETIC_PRESETS: Record<string, PlayerCosmetic> = {
         hasHeadband: false,
         headbandColor: 0xFFFFFF,
         hasWristbands: false,
+        height: 0.95,
     },
 };
 
 /**
  * Applies cosmetic customization to a stickman object.
- * Note: This function assumes the stickman object has properties for visual customization.
- * Actual implementation depends on the stickman rendering structure.
  *
- * @param stickman - The stickman object to customize (typically from StickmanRenderer)
+ * @param stickman - The stickman object to customize (implements CosmeticTarget)
  * @param cosmetic - The cosmetic configuration to apply
  */
-export function applyCosmetic(stickman: any, cosmetic: PlayerCosmetic): void {
-    // Apply head shape (implementation depends on stickman structure)
+export function applyCosmetic(stickman: CosmeticTarget, cosmetic: PlayerCosmetic): void {
+    // Apply head shape
     if (stickman.setHeadShape) {
         stickman.setHeadShape(cosmetic.headShape);
     }
@@ -76,13 +87,6 @@ export function applyCosmetic(stickman: any, cosmetic: PlayerCosmetic): void {
     // Apply head size
     if (stickman.setHeadSize) {
         stickman.setHeadSize(cosmetic.headSize);
-    }
-
-    // Apply line thickness
-    if (stickman.setLineThickness) {
-        stickman.setLineThickness(cosmetic.lineThickness);
-    } else if (stickman.material && stickman.material.linewidth !== undefined) {
-        stickman.material.linewidth = cosmetic.lineThickness;
     }
 
     // Apply headband
@@ -95,9 +99,8 @@ export function applyCosmetic(stickman: any, cosmetic: PlayerCosmetic): void {
         stickman.setWristbands(cosmetic.hasWristbands);
     }
 
-    // Store cosmetic data for later reference
-    if (stickman.cosmetic === undefined) {
-        stickman.cosmetic = {};
+    // Apply height variation
+    if (stickman.setHeight && cosmetic.height !== undefined) {
+        stickman.setHeight(cosmetic.height);
     }
-    Object.assign(stickman.cosmetic, cosmetic);
 }

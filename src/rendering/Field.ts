@@ -1,12 +1,47 @@
 import * as THREE from 'three';
 import { FIELD_LENGTH, FIELD_WIDTH, ENDZONE_DEPTH, BRICK_MARK_DISTANCE } from '../data/Constants';
 
+const MOWING_STRIPE_WIDTH = 5.0;
+const MOWING_BRIGHTNESS_DIFF = 0.07;
+
 export function createField(): THREE.Group {
     const group = new THREE.Group();
 
-    // Main surface
+    // Main surface with mowing stripe pattern
     const fieldGeo = new THREE.PlaneGeometry(FIELD_WIDTH, FIELD_LENGTH);
     const fieldMat = new THREE.MeshStandardMaterial({ color: 0x2d8c2d });
+
+    // Inject mowing stripes into the field surface shader
+    fieldMat.onBeforeCompile = (shader) => {
+        shader.vertexShader = `
+            varying vec3 vFieldWorldPos;
+        ` + shader.vertexShader;
+
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `
+            #include <begin_vertex>
+            vFieldWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+            `
+        );
+
+        shader.fragmentShader = `
+            varying vec3 vFieldWorldPos;
+        ` + shader.fragmentShader;
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <color_fragment>',
+            `
+            #include <color_fragment>
+            // Mowing stripe pattern perpendicular to endzones (along X axis)
+            float stripePhase = floor(vFieldWorldPos.z / ${MOWING_STRIPE_WIDTH.toFixed(1)});
+            float stripeMod = mod(stripePhase, 2.0);
+            float mowFactor = mix(1.0, ${(1.0 - MOWING_BRIGHTNESS_DIFF).toFixed(3)}, stripeMod);
+            diffuseColor.rgb *= mowFactor;
+            `
+        );
+    };
+
     const fieldMesh = new THREE.Mesh(fieldGeo, fieldMat);
     fieldMesh.rotation.x = -Math.PI / 2;
     fieldMesh.position.set(0, 0, FIELD_LENGTH / 2);

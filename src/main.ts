@@ -2954,9 +2954,6 @@ async function main() {
             postFX.handleResize(width, height);
             discTrail.handleResize(width, height);
             updateViewports();
-            for (const p of allPlayers) {
-                p.stickman.updateResolution(width, height);
-            }
         };
         window.addEventListener('resize', resizeHandler);
 

@@ -2,6 +2,11 @@ import * as THREE from 'three';
 
 export type CameraMode = 'follow_player' | 'follow_disc' | 'broadcast' | 'overview';
 
+// Shake presets for main.ts integration
+export const SHAKE_LAYOUT = { intensity: 0.12, duration: 0.3 };
+export const SHAKE_SCORE = { intensity: 0.08, duration: 0.2 };
+export const SHAKE_BLOCK = { intensity: 0.1, duration: 0.15 };
+
 const _tempCenter = new THREE.Vector3();
 const _finalOffset = new THREE.Vector3();
 
@@ -14,6 +19,11 @@ export class GameCamera {
     private prevOffset = new THREE.Vector3();
     private targetOffset = new THREE.Vector3();
 
+    // Screen shake state
+    private shakeIntensity = 0;
+    private shakeDuration = 0;
+    private shakeTimer = 0;
+
     constructor() {
         this.camera = new THREE.PerspectiveCamera(
             60,
@@ -25,12 +35,7 @@ export class GameCamera {
         this.camera.lookAt(0, 0, 50);
     }
 
-    setMode(mode: CameraMode): void {
-        if (mode === this.mode) return;
-        this.mode = mode;
-        this.prevOffset.copy(this.currentOffset);
-        this.transitionProgress = 0;
-
+    private applyModeOffset(mode: CameraMode): void {
         switch (mode) {
             case 'follow_player':
                 this.targetOffset.set(0, 12, -18);
@@ -44,6 +49,29 @@ export class GameCamera {
             case 'overview':
                 this.targetOffset.set(-55, 45, 0);
                 break;
+        }
+    }
+
+    setMode(mode: CameraMode): void {
+        if (mode === this.mode) return;
+        this.mode = mode;
+        this.prevOffset.copy(this.currentOffset);
+        this.transitionProgress = 0;
+        this.applyModeOffset(mode);
+    }
+
+    /**
+     * Trigger a screen shake effect.
+     * @param intensity - amplitude in world units (0.05 = subtle, 0.15 = medium, 0.3 = heavy)
+     * @param duration - seconds (typically 0.15-0.3)
+     */
+    triggerShake(intensity: number, duration: number): void {
+        // Only override if the new shake is stronger than the current remaining one
+        const currentRemaining = this.shakeIntensity * Math.max(0, 1 - this.shakeTimer / this.shakeDuration);
+        if (intensity > currentRemaining || this.shakeDuration <= 0) {
+            this.shakeIntensity = intensity;
+            this.shakeDuration = duration;
+            this.shakeTimer = 0;
         }
     }
 
@@ -83,6 +111,35 @@ export class GameCamera {
         _finalOffset.copy(this.currentOffset).multiplyScalar(zoomMod);
         this.camera.position.copy(this.target).add(_finalOffset);
         this.camera.lookAt(this.target);
+
+        // Screen shake (applied after camera positioning)
+        if (this.shakeTimer < this.shakeDuration && this.shakeIntensity > 0) {
+            this.shakeTimer += dt;
+            // Linear decay from full intensity to zero over duration
+            const progress = Math.min(1, this.shakeTimer / this.shakeDuration);
+            const amplitude = this.shakeIntensity * (1 - progress);
+
+            // High-frequency oscillation on each axis with slightly different frequencies
+            // for organic, non-repeating feel
+            const freqX = 37;  // ~37Hz
+            const freqY = 43;  // ~43Hz
+            const freqZ = 31;  // ~31Hz
+            const time = this.shakeTimer;
+
+            const offsetX = Math.sin(time * freqX * Math.PI * 2) * amplitude;
+            const offsetY = Math.sin(time * freqY * Math.PI * 2) * amplitude * 0.7;
+            const offsetZ = Math.sin(time * freqZ * Math.PI * 2) * amplitude * 0.4;
+
+            this.camera.position.x += offsetX;
+            this.camera.position.y += offsetY;
+            this.camera.position.z += offsetZ;
+
+            if (progress >= 1) {
+                this.shakeIntensity = 0;
+                this.shakeDuration = 0;
+                this.shakeTimer = 0;
+            }
+        }
     }
 
     /** Instantly snap to a mode + target with no transition or lerp. */
@@ -90,21 +147,7 @@ export class GameCamera {
         this.mode = mode;
         this.target.copy(target);
         this.transitionProgress = 1;
-
-        switch (mode) {
-            case 'follow_player':
-                this.targetOffset.set(0, 12, -18);
-                break;
-            case 'follow_disc':
-                this.targetOffset.set(0, 18, -25);
-                break;
-            case 'broadcast':
-                this.targetOffset.set(-40, 25, 0);
-                break;
-            case 'overview':
-                this.targetOffset.set(-55, 45, 0);
-                break;
-        }
+        this.applyModeOffset(mode);
         this.currentOffset.copy(this.targetOffset);
         this.prevOffset.copy(this.targetOffset);
 

@@ -88,10 +88,10 @@ describe('AI: Offense', () => {
         });
 
         it('positions stack downfield from disc when attacking endzone 0', () => {
-            const discPos = new THREE.Vector3(0, 0, 0);
+            const discPos = new THREE.Vector3(0, 0, 50);
             const positions = computeStackPositions(discPos, 0);
 
-            // All positions should be behind disc (negative z)
+            // All positions should be toward endzone 0 (lower z than disc)
             positions.forEach(pos => {
                 expect(pos.z).toBeLessThan(discPos.z);
             });
@@ -509,6 +509,14 @@ describe('AI: TeamAI', () => {
         };
     }
 
+    const mockBridge = {
+        predictThrow: () => [] as THREE.Vector3[],
+    };
+
+    function createMockDisc(pos: THREE.Vector3): any {
+        return { position: pos, bridge: mockBridge };
+    }
+
     function createTeam(players: any[]): any {
         return {
             players,
@@ -546,7 +554,7 @@ describe('AI: TeamAI', () => {
         const offenders = createSevenPlayers('home');
         const team = createTeam(defenders);
         const opponent = createTeam(offenders);
-        const disc = { position: new THREE.Vector3(0, 0, 30) };
+        const disc = createMockDisc(new THREE.Vector3(0, 0, 30));
 
         ai.update(0.016, team, opponent, disc as any, false, 100, 0, 0, 0);
 
@@ -616,7 +624,7 @@ describe('AI: TeamAI', () => {
         const offenders = createSevenPlayers('home');
         const team = createTeam(defenders);
         const opponent = createTeam(offenders);
-        const disc = { position: new THREE.Vector3(0, 0, 30) };
+        const disc = createMockDisc(new THREE.Vector3(0, 0, 30));
 
         ai.update(0.016, team, opponent, disc as any, false, 100, 0, 0, 0);
 
@@ -662,7 +670,7 @@ describe('AI: TeamAI', () => {
             } as any,
         );
 
-        const disc = { position: new THREE.Vector3(0, 0, 0) };
+        const disc = createMockDisc(new THREE.Vector3(0, 0, 0));
         ai.update(
             0.1,
             createTeam(offense),
@@ -700,7 +708,7 @@ describe('AI: TeamAI', () => {
         const defense = createSevenPlayers('away');
         offense[0].holdingDisc = true;
 
-        const disc = { position: offense[0].movement.position.clone() };
+        const disc = createMockDisc(offense[0].movement.position.clone());
         ai.update(
             0.2,
             createTeam(offense),
@@ -741,7 +749,7 @@ describe('AI: TeamAI', () => {
             0.2,
             createTeam(offense),
             createTeam(defense),
-            { position: new THREE.Vector3(0, 0, 10) } as any,
+            createMockDisc(new THREE.Vector3(0, 0, 10)),
             true,
             100,
             0,
@@ -770,7 +778,7 @@ describe('AI: TeamAI', () => {
         defense[5].movement.position.set(1.2, 0, 14.8);
         defense[6].movement.position.set(12, 0, 25);
 
-        const disc = { position: new THREE.Vector3(0, 0, 10) };
+        const disc = createMockDisc(new THREE.Vector3(0, 0, 10));
         ai.update(
             0.2,
             createTeam(offense),

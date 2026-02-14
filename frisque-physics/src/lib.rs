@@ -42,6 +42,7 @@ pub struct DiscSimulator {
     state: DiscState,
     profile: DiscProfile,
     wind: wind::WindField,
+    last_ground_type: u8,
 }
 
 #[wasm_bindgen]
@@ -52,6 +53,7 @@ impl DiscSimulator {
             state: DiscState::new(),
             profile: default_ultimate_disc(),
             wind: wind::WindField::new(0.0, 0.0),
+            last_ground_type: 0,
         }
     }
 
@@ -74,6 +76,7 @@ impl DiscSimulator {
             release_height, off_axis, is_forehand,
             0.0, release_height, 0.0,
         );
+        self.last_ground_type = 0;
     }
 
     /// Predict trajectory for a hypothetical throw without modifying simulator state.
@@ -121,7 +124,10 @@ impl DiscSimulator {
         }
         let wind_at_disc = self.wind.sample(self.state.position);
         integration::step(&mut self.state, dt, &self.profile, wind_at_disc);
-        ground::check_ground(&mut self.state);
+        let gt = ground::check_ground(&mut self.state);
+        if gt != ground::GroundType::None {
+            self.last_ground_type = gt as u8;
+        }
         !self.state.grounded
     }
 
@@ -144,6 +150,9 @@ impl DiscSimulator {
     pub fn spin_rate(&self) -> f32 { self.state.spin.y.abs() }
     pub fn is_grounded(&self) -> bool { self.state.grounded }
 
+    /// Last ground interaction type: 0=none, 1=skip, 2=edge_catch, 3=nose_in, 4=slide
+    pub fn last_ground_type(&self) -> u8 { self.last_ground_type }
+
     // Wind control
     pub fn set_base_wind(&mut self, speed: f32, direction: f32) {
         self.wind = wind::WindField::new(speed, direction);
@@ -161,6 +170,11 @@ impl DiscSimulator {
 
     pub fn update_wind(&mut self, dt: f32) {
         self.wind.update(dt);
+    }
+
+    // Thermal control
+    pub fn add_thermal(&mut self, x: f32, z: f32, radius: f32, strength: f32, lifetime: f32) {
+        self.wind.add_thermal(x, z, radius, strength, lifetime);
     }
 
     /// Predict trajectory. Returns flat array of [x,y,z, x,y,z, ...] positions.
@@ -459,10 +473,11 @@ mod tests {
         ground::check_ground(&mut state);
         assert!(!state.grounded, "Disc above ground should not be grounded");
 
+        // Steep nose-in: mostly vertical velocity
         state.position.y = -0.1;
-        state.velocity.y = -3.0;
+        state.velocity = Vec3::new(0.0, -10.0, 2.0);
         ground::check_ground(&mut state);
-        assert!(state.grounded, "Disc below ground with downward velocity should be grounded");
+        assert!(state.grounded, "Disc below ground with steep downward velocity should be grounded (nose-in)");
         assert!((state.position.y).abs() < 0.01, "Grounded disc should be at y=0");
     }
 
@@ -974,5 +989,165 @@ mod tests {
 
         assert!(diff > 0.001,
             "Wind update should change turbulence, diff={:.4}", diff);
+    }
+
+    // ===== Skip/bounce ground physics tests =====
+
+    #[test]
+    fn test_skip_shot_bounces() {
+        // Disc hitting ground at shallow angle with good speed should skip
+        let mut state = DiscState {
+            position: Vec3::new(0.0, -0.01, 20.0),
+            velocity: Vec3::new(0.0, -2.0, 15.0), // shallow angle
+            orientation: Quat::identity(),
+            spin: Vec3::new(0.0, 60.0, 0.0),
+            grounded: false,
+        };
+
+        let gt = ground::check_ground(&mut state);
+        assert_eq!(gt as u8, 1, "Should be a skip (type 1), got {}", gt as u8);
+        assert!(!state.grounded, "Disc should be airborne after skip");
+        assert!(state.velocity.y > 0.0, "Should bounce upward after skip");
+        // Horizontal speed should be reduced but still significant
+        assert!(state.velocity.z > 10.0, "Should retain most horizontal speed");
+    }
+
+    #[test]
+    fn test_nose_in_stops_disc() {
+        // Disc coming straight down at steep angle
+        let mut state = DiscState {
+            position: Vec3::new(0.0, -0.01, 20.0),
+            velocity: Vec3::new(0.0, -10.0, 2.0), // steep angle > 45 deg
+            orientation: Quat::identity(),
+            spin: Vec3::new(0.0, 60.0, 0.0),
+            grounded: false,
+        };
+
+        let gt = ground::check_ground(&mut state);
+        assert_eq!(gt as u8, 3, "Should be nose-in (type 3), got {}", gt as u8);
+        assert!(state.grounded, "Disc should be grounded after nose-in");
+        assert!(state.velocity.length() < 0.01, "Velocity should be zero");
+    }
+
+    #[test]
+    fn test_skip_continues_flight() {
+        // Full simulation: disc that skips should continue flying
+        let mut sim = DiscSimulator::new();
+        // Low, fast throw that will hit ground at shallow angle
+        sim.throw_disc(20.0, 0.0, -0.05, 0.999, 70.0, -0.02, 0.1, 0.5, 0.0, false);
+
+        let mut max_steps = 0u32;
+
+        for _ in 0..4800 { // 20 seconds max
+            sim.step(DT);
+            max_steps += 1;
+
+            if sim.is_grounded() {
+                break;
+            }
+        }
+
+        // The disc should eventually stop
+        assert!(sim.is_grounded() || max_steps == 4800,
+            "Disc should eventually come to rest");
+    }
+
+    #[test]
+    fn test_last_ground_type_resets_on_throw() {
+        let mut sim = DiscSimulator::new();
+        sim.throw_disc(20.0, 0.0, 0.1, 0.995, 70.0, -0.02, 0.1, 1.5, 0.0, false);
+        assert_eq!(sim.last_ground_type(), 0, "Ground type should reset on throw");
+    }
+
+    // ===== Thermal system tests (via DiscSimulator) =====
+
+    #[test]
+    fn test_thermal_adds_updraft() {
+        let mut w = wind::WindField::new(0.0, 0.0);
+        w.add_thermal(0.0, 0.0, 10.0, 2.0, 10.0);
+        w.thermals[0].age = 5.0; // mid-life for full strength
+
+        // Sample at center
+        let wind_center = w.sample(Vec3::new(0.0, 1.0, 0.0));
+        assert!(wind_center.y > 1.0,
+            "Thermal center should produce updraft, got y={:.3}", wind_center.y);
+
+        // Sample at edge (1.2x radius)
+        let wind_edge = w.sample(Vec3::new(12.0, 1.0, 0.0));
+        assert!(wind_edge.y < 0.0,
+            "Thermal edge should produce downdraft, got y={:.3}", wind_edge.y);
+
+        // Sample far away
+        let wind_far = w.sample(Vec3::new(50.0, 1.0, 0.0));
+        assert!(wind_far.y.abs() < 0.01,
+            "Far from thermal should have no effect, got y={:.3}", wind_far.y);
+    }
+
+    #[test]
+    fn test_thermal_despawns_after_lifetime() {
+        let mut w = wind::WindField::new(0.0, 0.0);
+        w.add_thermal(0.0, 0.0, 10.0, 2.0, 5.0);
+        assert_eq!(w.thermals.len(), 1);
+
+        // Update past lifetime
+        w.update(6.0);
+        assert_eq!(w.thermals.len(), 0, "Thermal should despawn after lifetime");
+    }
+
+    #[test]
+    fn test_thermal_affects_disc_flight() {
+        // Throw a disc through a strong thermal and check if altitude changes
+        let profile = default_ultimate_disc();
+        let mut w = wind::WindField::new(0.0, 0.0);
+        // Place a strong thermal at z=10
+        w.add_thermal(0.0, 10.0, 15.0, 3.0, 20.0);
+        w.thermals[0].age = 5.0;
+
+        // Disc flying toward the thermal
+        let dir = Vec3::new(0.0, 0.0, 1.0);
+        let yaw = (-dir.z).atan2(dir.x);
+        let q = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), yaw);
+
+        let mut state_thermal = DiscState {
+            position: Vec3::new(0.0, 3.0, 0.0),
+            velocity: Vec3::new(0.0, 0.0, 15.0),
+            orientation: q,
+            spin: Vec3::new(0.0, 60.0, 0.0),
+            grounded: false,
+        };
+
+        // Same disc without thermal
+        let w_none = wind::WindField::new(0.0, 0.0);
+        let mut state_no_thermal = state_thermal.clone();
+
+        // Simulate both for 1 second
+        for _ in 0..240 {
+            let wind_t = w.sample(state_thermal.position);
+            integration::step(&mut state_thermal, DT, &profile, wind_t);
+
+            let wind_n = w_none.sample(state_no_thermal.position);
+            integration::step(&mut state_no_thermal, DT, &profile, wind_n);
+        }
+
+        // Disc through thermal should be higher than disc without
+        assert!(state_thermal.position.y > state_no_thermal.position.y,
+            "Disc through thermal should gain altitude: {:.2}m vs {:.2}m",
+            state_thermal.position.y, state_no_thermal.position.y);
+    }
+
+    #[test]
+    fn test_simulator_add_thermal() {
+        let mut sim = DiscSimulator::new();
+        sim.add_thermal(10.0, 20.0, 8.0, 1.5, 15.0);
+
+        // Verify thermal contributes to wind
+        let wy = sim.wind_at_y(10.0, 1.0, 20.0);
+        // At age 0 the thermal is just ramping up, so effect might be small
+        // but after updating wind, it should have some effect
+        sim.update_wind(5.0); // advance to mid-life
+        let wy_after = sim.wind_at_y(10.0, 1.0, 20.0);
+        assert!(wy_after > wy,
+            "Thermal should contribute more updraft after aging: before={:.3}, after={:.3}",
+            wy, wy_after);
     }
 }

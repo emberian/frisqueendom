@@ -5,13 +5,18 @@ import type {
     CareerAward,
     CareerData,
     CareerMilestone,
+    CultureBonuses,
+    CultureEvent,
     MentorshipPair,
     CareerOpponentData,
     MatchPlayerStats,
     MatchResult,
+    PlaybookData,
     RecruitCandidate,
     ScoutingReport,
+    ScoutReport,
     SeasonEvent,
+    SimulationResult,
     TournamentData,
     TournamentMatch,
     TryoutDrill,
@@ -2271,5 +2276,561 @@ export class CareerManager {
             );
         }
         return true;
+    }
+
+    // ----------------------------------------------------------------
+    // Feature 2: Team Culture Traits
+    // ----------------------------------------------------------------
+
+    /**
+     * Update culture based on a game event.
+     * Culture traits range from 0-100 and decay toward 50 over time.
+     *
+     * Culture events:
+     * - Win against higher-ranked team: competitive +3
+     * - Spirit award: spirited +5
+     * - Hard practice week: athletic +2
+     * - Complex playbook used: cerebral +2
+     * - Win close game (within 2 points): clutch +3
+     */
+    updateCulture(event: CultureEvent): void {
+        switch (event.type) {
+            case 'win_vs_higher':
+                if (event.opponentRating > event.playerRating) {
+                    this.data.culture.competitive = clamp(
+                        this.data.culture.competitive + CAREER_CONSTANTS.CULTURE_WIN_VS_HIGHER_COMPETITIVE,
+                        CAREER_CONSTANTS.CULTURE_MIN,
+                        CAREER_CONSTANTS.CULTURE_MAX,
+                    );
+                }
+                break;
+            case 'spirit_award':
+                this.data.culture.spirited = clamp(
+                    this.data.culture.spirited + CAREER_CONSTANTS.CULTURE_SPIRIT_AWARD_SPIRITED,
+                    CAREER_CONSTANTS.CULTURE_MIN,
+                    CAREER_CONSTANTS.CULTURE_MAX,
+                );
+                break;
+            case 'hard_practice':
+                this.data.culture.athletic = clamp(
+                    this.data.culture.athletic + CAREER_CONSTANTS.CULTURE_HARD_PRACTICE_ATHLETIC,
+                    CAREER_CONSTANTS.CULTURE_MIN,
+                    CAREER_CONSTANTS.CULTURE_MAX,
+                );
+                break;
+            case 'complex_playbook':
+                this.data.culture.cerebral = clamp(
+                    this.data.culture.cerebral + CAREER_CONSTANTS.CULTURE_COMPLEX_PLAYBOOK_CEREBRAL,
+                    CAREER_CONSTANTS.CULTURE_MIN,
+                    CAREER_CONSTANTS.CULTURE_MAX,
+                );
+                break;
+            case 'close_game_win':
+                if (Math.abs(event.pointDiff) <= 2) {
+                    this.data.culture.clutch = clamp(
+                        this.data.culture.clutch + CAREER_CONSTANTS.CULTURE_CLOSE_GAME_CLUTCH,
+                        CAREER_CONSTANTS.CULTURE_MIN,
+                        CAREER_CONSTANTS.CULTURE_MAX,
+                    );
+                }
+                break;
+        }
+    }
+
+    /**
+     * Get current culture bonuses based on trait values.
+     * Each trait above the threshold (60) grants a specific gameplay bonus.
+     *
+     * Culture bonuses (returned for main.ts to apply):
+     * - competitive > 60: +5% stats in close games
+     * - spirited > 60: +10% recruiting appeal
+     * - athletic > 60: +3% physical stats
+     * - cerebral > 60: +5% AI decision quality
+     * - clutch > 60: +5% composure in game point situations
+     */
+    getCultureBonuses(): CultureBonuses {
+        const threshold = CAREER_CONSTANTS.CULTURE_BONUS_THRESHOLD;
+        return {
+            closeGameStatsBonus:
+                this.data.culture.competitive > threshold
+                    ? CAREER_CONSTANTS.CULTURE_COMPETITIVE_BONUS
+                    : 0,
+            recruitingAppealBonus:
+                this.data.culture.spirited > threshold
+                    ? CAREER_CONSTANTS.CULTURE_SPIRITED_BONUS
+                    : 0,
+            physicalStatsBonus:
+                this.data.culture.athletic > threshold
+                    ? CAREER_CONSTANTS.CULTURE_ATHLETIC_BONUS
+                    : 0,
+            aiDecisionBonus:
+                this.data.culture.cerebral > threshold
+                    ? CAREER_CONSTANTS.CULTURE_CEREBRAL_BONUS
+                    : 0,
+            clutchComposureBonus:
+                this.data.culture.clutch > threshold
+                    ? CAREER_CONSTANTS.CULTURE_CLUTCH_BONUS
+                    : 0,
+        };
+    }
+
+    /**
+     * Decay all culture traits toward 50 by CULTURE_DECAY_RATE per week.
+     * Called during advanceWeek to prevent runaway accumulation.
+     */
+    applyCultureDecay(): void {
+        const target = CAREER_CONSTANTS.CULTURE_DECAY_TARGET;
+        const rate = CAREER_CONSTANTS.CULTURE_DECAY_RATE;
+        const traits: Array<keyof typeof this.data.culture> = [
+            'competitive', 'spirited', 'athletic', 'cerebral', 'clutch',
+        ];
+        for (const trait of traits) {
+            const current = this.data.culture[trait];
+            if (current > target) {
+                this.data.culture[trait] = Math.max(target, current - rate);
+            } else if (current < target) {
+                this.data.culture[trait] = Math.min(target, current + rate);
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Feature 3: Auto-Play Match Simulation
+    // ----------------------------------------------------------------
+
+    /**
+     * Simulate a match between two rosters without playing it.
+     * Uses deterministic RNG from SeededRandom.
+     *
+     * Simulation logic:
+     * - Compute team strength from average stats (offense: throw + catching, defense: marking + block attrs)
+     * - Each simulated point: weighted coin flip based on offensive team strength vs defensive team strength
+     * - Add variance from individual players (star player has outsized impact)
+     * - Simulate ~25-30 points to reach score target of 15
+     * - Generate narrative highlights
+     */
+    simulateMatch(
+        homeRoster: PlayerStats[],
+        awayRoster: PlayerStats[],
+        config: {
+            homePlaybook?: PlaybookData;
+            awayPlaybook?: PlaybookData;
+            weather?: string;
+        } = {},
+    ): SimulationResult {
+        const computeOffense = (roster: PlayerStats[]) => {
+            if (roster.length === 0) return 50;
+            return roster.reduce(
+                (sum, p) => sum + p.attributes.throwAccuracy + p.attributes.catching,
+                0,
+            ) / (roster.length * 2);
+        };
+        const computeDefense = (roster: PlayerStats[]) => {
+            if (roster.length === 0) return 50;
+            return roster.reduce(
+                (sum, p) => sum + p.attributes.marking + p.attributes.awareness,
+                0,
+            ) / (roster.length * 2);
+        };
+
+        const homeOffense = computeOffense(homeRoster);
+        const homeDefense = computeDefense(homeRoster);
+        const awayOffense = computeOffense(awayRoster);
+        const awayDefense = computeDefense(awayRoster);
+
+        // Star player outsized impact: best player contributes bonus
+        const starBonus = (roster: PlayerStats[]) => {
+            if (roster.length === 0) return 0;
+            const best = [...roster].sort((a, b) => b.overallRating - a.overallRating)[0];
+            return (best.overallRating - 60) * 0.05;
+        };
+        const homeStarBonus = starBonus(homeRoster);
+        const awayStarBonus = starBonus(awayRoster);
+
+        // Playbook complexity bonus
+        const playbookBonus = (pb?: PlaybookData) => {
+            if (!pb) return 0;
+            return Math.min(2, (pb.plays.length * 0.3 + pb.formations.length * 0.2));
+        };
+        const homePlaybookBonus = playbookBonus(config.homePlaybook);
+        const awayPlaybookBonus = playbookBonus(config.awayPlaybook);
+
+        // Weather penalty
+        const weatherPenalty = config.weather === 'rain' || config.weather === 'wind' ? 3 : 0;
+
+        let homeScore = 0;
+        let awayScore = 0;
+        const target = CAREER_CONSTANTS.SIM_SCORE_TARGET;
+        const maxPoints = CAREER_CONSTANTS.SIM_MAX_POINTS;
+        const pointLog: SimulationResult['pointLog'] = [];
+        const highlights: SimulationResult['highlights'] = [];
+        const statsMap = new Map<string, { goals: number; assists: number; blocks: number; turnovers: number }>();
+
+        // Init stats for all players
+        for (const p of [...homeRoster, ...awayRoster]) {
+            if (!statsMap.has(p.id)) {
+                statsMap.set(p.id, { goals: 0, assists: 0, blocks: 0, turnovers: 0 });
+            }
+        }
+
+        let point = 0;
+        let homeReceiving = true;
+        while (homeScore < target && awayScore < target && point < maxPoints) {
+            point++;
+            const attackingTeam = homeReceiving ? 'home' : 'away';
+            const attackRoster = homeReceiving ? homeRoster : awayRoster;
+            const defendRoster = homeReceiving ? awayRoster : homeRoster;
+
+            const attackOffense = homeReceiving
+                ? homeOffense + homeStarBonus + homePlaybookBonus
+                : awayOffense + awayStarBonus + awayPlaybookBonus;
+            const defendDefense = homeReceiving
+                ? awayDefense + awayStarBonus
+                : homeDefense + homeStarBonus;
+
+            const adjustedAttack = Math.max(1, attackOffense - weatherPenalty);
+            const chance = clamp01(0.5 + (adjustedAttack - defendDefense) / 100);
+            const scored = Random.next() < chance;
+
+            if (scored) {
+                if (attackingTeam === 'home') homeScore++;
+                else awayScore++;
+
+                // Pick scorer and assister from attacking roster
+                const scorer = this.pickWeightedPlayer(attackRoster);
+                const assister = this.pickWeightedPlayer(
+                    attackRoster.filter(p => p.id !== scorer.id),
+                );
+                const scorerStats = statsMap.get(scorer.id);
+                const assisterStats = statsMap.get(assister.id);
+                if (scorerStats) scorerStats.goals++;
+                if (assisterStats) assisterStats.assists++;
+
+                pointLog.push({
+                    scorer: scorer.fullName,
+                    assister: assister.fullName,
+                    team: attackingTeam,
+                });
+
+                // Random block credit on defense
+                if (Random.next() < 0.2 && defendRoster.length > 0) {
+                    const blocker = this.pickWeightedPlayer(defendRoster);
+                    const blockerStats = statsMap.get(blocker.id);
+                    if (blockerStats) blockerStats.blocks++;
+                }
+
+                // Generate highlight
+                const highlightRoll = Random.next();
+                if (highlightRoll < 0.15) {
+                    highlights.push({
+                        description: `${scorer.fullName} scored a layout goal assisted by ${assister.fullName}`,
+                        player: scorer.fullName,
+                        type: 'layout_goal',
+                    });
+                } else if (highlightRoll < 0.25) {
+                    highlights.push({
+                        description: `${scorer.fullName} finished a deep huck from ${assister.fullName}`,
+                        player: scorer.fullName,
+                        type: 'huck_goal',
+                    });
+                }
+            } else {
+                // Turnover credited
+                if (attackingTeam === 'home') awayScore++;
+                else homeScore++;
+
+                if (Random.next() < 0.3 && attackRoster.length > 0) {
+                    const thrower = this.pickWeightedPlayer(attackRoster);
+                    const throwerStats = statsMap.get(thrower.id);
+                    if (throwerStats) throwerStats.turnovers++;
+                }
+
+                // Block highlight
+                if (Random.next() < 0.2 && defendRoster.length > 0) {
+                    const blocker = this.pickWeightedPlayer(defendRoster);
+                    const blockerStats = statsMap.get(blocker.id);
+                    if (blockerStats) blockerStats.blocks++;
+                    highlights.push({
+                        description: `${blocker.fullName} generated a key block on defense`,
+                        player: blocker.fullName,
+                        type: 'block',
+                    });
+                }
+
+                pointLog.push({
+                    scorer: 'break',
+                    assister: '',
+                    team: attackingTeam === 'home' ? 'away' : 'home',
+                });
+            }
+
+            homeReceiving = !scored === homeReceiving;
+        }
+
+        // Spirit scores
+        const homeSpiritAvg = homeRoster.length > 0
+            ? homeRoster.reduce((sum, p) => sum + p.attributes.spirit, 0) / homeRoster.length
+            : 75;
+        const awaySpiritAvg = awayRoster.length > 0
+            ? awayRoster.reduce((sum, p) => sum + p.attributes.spirit, 0) / awayRoster.length
+            : 75;
+        const spiritScores: [number, number] = [
+            clamp(homeSpiritAvg / 10 + (Random.next() * 0.5 - 0.25), 4, 10),
+            clamp(awaySpiritAvg / 10 + (Random.next() * 0.5 - 0.25), 4, 10),
+        ];
+
+        // Compute stats array
+        const stats = [...statsMap.entries()].map(([playerId, s]) => ({
+            playerId,
+            goals: s.goals,
+            assists: s.assists,
+            blocks: s.blocks,
+            turnovers: s.turnovers,
+        }));
+
+        // Determine MVP: highest combined goals + assists + blocks
+        let mvpId = '';
+        let mvpScore = -1;
+        for (const s of stats) {
+            const combined = s.goals * 3 + s.assists * 2 + s.blocks * 2 - s.turnovers;
+            if (combined > mvpScore) {
+                mvpScore = combined;
+                mvpId = s.playerId;
+            }
+        }
+        const mvpPlayer = [...homeRoster, ...awayRoster].find(p => p.id === mvpId);
+        const mvp = mvpPlayer?.fullName || 'Unknown';
+
+        return {
+            homeScore,
+            awayScore,
+            pointLog,
+            highlights: highlights.slice(0, 10),
+            stats,
+            spiritScores,
+            mvp,
+        };
+    }
+
+    /**
+     * Pick a random player weighted by overall rating.
+     * Star players have an outsized probability of being selected.
+     */
+    private pickWeightedPlayer(roster: PlayerStats[]): PlayerStats {
+        if (roster.length === 0) {
+            throw new Error('Cannot pick from empty roster');
+        }
+        if (roster.length === 1) return roster[0];
+        const weights = roster.map(p => Math.max(1, p.overallRating));
+        const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+        let roll = Random.next() * totalWeight;
+        for (let i = 0; i < roster.length; i++) {
+            roll -= weights[i];
+            if (roll <= 0) return roster[i];
+        }
+        return roster[roster.length - 1];
+    }
+
+    // ----------------------------------------------------------------
+    // Feature 4: Extended Scouting System
+    // ----------------------------------------------------------------
+
+    /**
+     * Generate a ScoutReport for an opponent team based on their standings data.
+     * This costs a practice slot (reduces available training that week).
+     */
+    generateScoutReport(opponentTeamId: string): ScoutReport | null {
+        const standing = this.data.standings.find(s => s.teamId === opponentTeamId);
+        if (!standing) return null;
+
+        const rating = standing.rating;
+        const offenseStyle = rating >= 60 ? 'vertical stack' : 'horizontal stack';
+        const defenseStyle = rating >= 65 ? 'zone' : 'man-to-man';
+
+        const keyPlayers: ScoutReport['keyPlayers'] = [
+            {
+                name: `${standing.teamName} Handler`,
+                role: 'handler',
+                rating: Math.round(rating + (Random.next() * 8 - 4)),
+            },
+            {
+                name: `${standing.teamName} Cutter`,
+                role: 'cutter',
+                rating: Math.round(rating + (Random.next() * 8 - 4)),
+            },
+            {
+                name: `${standing.teamName} Deep Threat`,
+                role: 'cutter',
+                rating: Math.round(rating + (Random.next() * 10 - 5)),
+            },
+        ];
+
+        const weaknesses: string[] = [];
+        if (rating < 55) weaknesses.push('Inconsistent handler resets under pressure');
+        if (rating < 50) weaknesses.push('Limited defensive depth');
+        if (standing.spirit < 7) weaknesses.push('Prone to contested calls and momentum swings');
+        if (standing.losses > standing.wins) weaknesses.push('Struggles in close games');
+        if (weaknesses.length === 0) weaknesses.push('Well-rounded, no obvious weaknesses');
+
+        return {
+            teamName: standing.teamName,
+            overallRating: rating,
+            offenseStyle,
+            defenseStyle,
+            keyPlayers,
+            weaknesses,
+        };
+    }
+
+    // ----------------------------------------------------------------
+    // Feature 5: Budget System
+    // ----------------------------------------------------------------
+
+    /**
+     * Get the tournament entry fee based on tier.
+     * - local: 200, regional: 300, national: 400, elite: 500
+     */
+    getTournamentFee(tier: 'local' | 'regional' | 'national' | 'elite'): number {
+        switch (tier) {
+            case 'local': return CAREER_CONSTANTS.TOURNAMENT_FEE_LOCAL;
+            case 'regional': return CAREER_CONSTANTS.TOURNAMENT_FEE_REGIONAL;
+            case 'national': return CAREER_CONSTANTS.TOURNAMENT_FEE_NATIONAL;
+            case 'elite': return CAREER_CONSTANTS.TOURNAMENT_FEE_ELITE;
+        }
+    }
+
+    /**
+     * Get travel cost based on division (higher divisions = more travel).
+     * Range: 100 (div 4) to 850 (div 1).
+     */
+    getTravelCost(): number {
+        const divisionMultiplier = CAREER_CONSTANTS.DIVISION_MAX - this.data.division;
+        return CAREER_CONSTANTS.TRAVEL_COST_BASE +
+            divisionMultiplier * CAREER_CONSTANTS.TRAVEL_COST_DIVISION_MULTIPLIER;
+    }
+
+    /**
+     * Charge a tournament entry fee and travel cost. Returns false if insufficient budget
+     * for an optional tournament. Core season continues regardless.
+     */
+    chargeTournamentCosts(tier: 'local' | 'regional' | 'national' | 'elite', isOptional: boolean): boolean {
+        const fee = this.getTournamentFee(tier);
+        const travel = this.getTravelCost();
+        const total = fee + travel;
+
+        if (isOptional && this.data.finances.budget < 0) {
+            return false;
+        }
+
+        this.data.finances.budget -= total;
+        this.data.finances.tournamentFees += fee;
+        this.data.finances.travelCosts += travel;
+        this.data.finances.expenses.push(
+            { source: `Tournament entry (${tier})`, amount: fee },
+            { source: `Travel (${tier})`, amount: travel },
+        );
+        return true;
+    }
+
+    /**
+     * Apply seasonal equipment and field rental costs.
+     * Equipment: 50/season, Field rental: 100/season.
+     */
+    applySeasonalCosts(): void {
+        const equipment = CAREER_CONSTANTS.EQUIPMENT_COST_PER_SEASON;
+        const fieldRental = CAREER_CONSTANTS.FIELD_RENTAL_PER_SEASON;
+        const total = equipment + fieldRental;
+
+        this.data.finances.budget -= total;
+        this.data.finances.expenses.push(
+            { source: 'Seasonal equipment', amount: equipment },
+            { source: 'Field rental', amount: fieldRental },
+        );
+    }
+
+    /**
+     * Calculate and apply sponsorship income.
+     * Range: 500 to 5000 based on ranking and reputation.
+     */
+    applySponsorship(): void {
+        const rank = this.getCurrentRank();
+        const totalTeams = Math.max(1, this.data.standings.length);
+        const rankFactor = 1 - (rank - 1) / totalTeams;
+        const reputationFactor = this.data.reputation.overall / 100;
+        const amount = Math.round(
+            CAREER_CONSTANTS.SPONSORSHIP_BASE +
+            (rankFactor * 0.6 + reputationFactor * 0.4) * CAREER_CONSTANTS.SPONSORSHIP_RANKING_SCALE,
+        );
+
+        this.data.finances.budget += amount;
+        this.data.finances.revenue += amount;
+        this.data.finances.income.push({
+            source: 'Sponsorship',
+            amount,
+        });
+    }
+
+    /**
+     * Run a fundraising event.
+     * Income: 200-500, also boosts team morale by +3 (bonding event).
+     */
+    runFundraisingEvent(): CareerActionResult<{ income: number }> {
+        const income = Math.round(
+            CAREER_CONSTANTS.FUNDRAISER_INCOME_MIN +
+            Random.next() * (CAREER_CONSTANTS.FUNDRAISER_INCOME_MAX - CAREER_CONSTANTS.FUNDRAISER_INCOME_MIN),
+        );
+
+        this.data.finances.budget += income;
+        this.data.finances.revenue += income;
+        this.data.finances.income.push({
+            source: 'Fundraising event',
+            amount: income,
+        });
+
+        // Bonding boost: +3 morale for all players
+        for (const player of this.data.team.roster) {
+            player.morale = clamp(
+                player.morale + CAREER_CONSTANTS.FUNDRAISER_MORALE_BOOST,
+                0,
+                100,
+            );
+        }
+
+        this.logIncident(
+            'positive',
+            `Fundraising event raised $${income.toLocaleString()} and boosted team morale.`,
+            0.35,
+        );
+        this.save();
+        return { ok: true, data: { income } };
+    }
+
+    /**
+     * Check if the team can afford to enter an optional tournament.
+     * Returns false if balance is negative.
+     */
+    canAffordOptionalTournament(): boolean {
+        return this.data.finances.budget >= 0;
+    }
+
+    /**
+     * Get a summary of the current budget situation.
+     */
+    getBudgetSummary(): {
+        balance: number;
+        totalIncome: number;
+        totalExpenses: number;
+        income: { source: string; amount: number }[];
+        expenses: { source: string; amount: number }[];
+    } {
+        const totalIncome = this.data.finances.income.reduce((sum, i) => sum + i.amount, 0);
+        const totalExpenses = this.data.finances.expenses.reduce((sum, e) => sum + e.amount, 0);
+        return {
+            balance: this.data.finances.budget,
+            totalIncome,
+            totalExpenses,
+            income: [...this.data.finances.income],
+            expenses: [...this.data.finances.expenses],
+        };
     }
 }

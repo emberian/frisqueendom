@@ -52,6 +52,23 @@ export class DiscBridge {
         return this.sim.spin_rate();
     }
 
+    /** Last ground interaction type: 'none' | 'skip' | 'edge_catch' | 'nose_in' | 'slide' */
+    lastGroundType(): 'none' | 'skip' | 'edge_catch' | 'nose_in' | 'slide' {
+        const t = this.sim.last_ground_type();
+        switch (t) {
+            case 1: return 'skip';
+            case 2: return 'edge_catch';
+            case 3: return 'nose_in';
+            case 4: return 'slide';
+            default: return 'none';
+        }
+    }
+
+    /** Add a thermal updraft/downdraft at world position (x, z) */
+    addThermal(x: number, z: number, radius: number, strength: number, lifetime: number): void {
+        this.sim.add_thermal(x, z, radius, strength, lifetime);
+    }
+
     setWind(speed: number, direction: number): void {
         this.lastWindSpeed = speed;
         this.lastWindDir = direction;

@@ -23,34 +23,45 @@ const BONES: [number, number][] = [
 // Shared static materials to minimize GPU overhead
 let SHARED_LIMB_MAT: THREE.MeshStandardMaterial | null = null;
 let SHARED_JOINT_MAT: THREE.MeshStandardMaterial | null = null;
+let SHARED_SHOE_MAT: THREE.MeshStandardMaterial | null = null;
 
 interface SharedMaterials {
     limb: THREE.MeshStandardMaterial;
     joint: THREE.MeshStandardMaterial;
+    shoe: THREE.MeshStandardMaterial;
 }
 
 function getSharedMaterials(): SharedMaterials {
-    if (!SHARED_LIMB_MAT || !SHARED_JOINT_MAT) {
-        SHARED_LIMB_MAT = new THREE.MeshStandardMaterial({ 
-            color: 0x111111,
-            roughness: 0.7,
-            metalness: 0.2
+    if (!SHARED_LIMB_MAT || !SHARED_JOINT_MAT || !SHARED_SHOE_MAT) {
+        SHARED_LIMB_MAT = new THREE.MeshStandardMaterial({
+            color: 0x2a2a2a,
+            roughness: 0.6,
+            metalness: 0.15
         });
-        applyRimLighting(SHARED_LIMB_MAT, 0.3);
+        applyRimLighting(SHARED_LIMB_MAT, 0.5);
 
-        SHARED_JOINT_MAT = new THREE.MeshStandardMaterial({ 
-            color: 0x000000,
+        SHARED_JOINT_MAT = new THREE.MeshStandardMaterial({
+            color: 0x1a1a1a,
             roughness: 0.5
         });
-        applyRimLighting(SHARED_JOINT_MAT, 0.2);
+        applyRimLighting(SHARED_JOINT_MAT, 0.35);
+
+        SHARED_SHOE_MAT = new THREE.MeshStandardMaterial({
+            color: 0xcccccc,
+            roughness: 0.4,
+            metalness: 0.1,
+            emissive: 0x444444,
+            emissiveIntensity: 0.15
+        });
+        applyRimLighting(SHARED_SHOE_MAT, 0.3);
     }
-    return { limb: SHARED_LIMB_MAT, joint: SHARED_JOINT_MAT };
+    return { limb: SHARED_LIMB_MAT, joint: SHARED_JOINT_MAT, shoe: SHARED_SHOE_MAT };
 }
 
 function applyRimLighting(mat: THREE.MeshStandardMaterial, intensity: number) {
     mat.onBeforeCompile = (shader) => {
         shader.uniforms.rimIntensity = { value: intensity };
-        // Rim color is now per-instance/mesh via userData if we wanted, 
+        // Rim color is now per-instance/mesh via userData if we wanted,
         // but for now we'll use a fixed white or team color uniform.
         // To support different team colors on shared mats, we use a varying.
         shader.vertexShader = `
@@ -87,6 +98,8 @@ function applyRimLighting(mat: THREE.MeshStandardMaterial, intensity: number) {
     };
 }
 
+export type Expression = 'neutral' | 'happy' | 'frustrated' | 'shocked';
+
 export class Stickman {
     group = new THREE.Group();
     private boneMeshes: THREE.Mesh[] = [];
@@ -94,13 +107,36 @@ export class Stickman {
     private headMesh: THREE.Mesh;
     private jerseyMesh: THREE.Mesh;
     private jerseyGeo: THREE.BufferGeometry;
+    private shortsMesh: THREE.Mesh;
+    private shortsGeo: THREE.BufferGeometry;
+    private leftShoeMesh: THREE.Mesh;
+    private rightShoeMesh: THREE.Mesh;
     private accentMesh: THREE.Mesh | null = null;
     private worldJoints = new Float32Array(JOINT_COUNT * 3);
     private indicatorRing: THREE.Mesh;
     private currentAccentColor: string | null = null;
 
-    private static readonly LIMB_RADIUS = 0.035;
-    private static readonly JOINT_RADIUS = 0.045;
+    // Eyes
+    private leftEye: THREE.Mesh;
+    private rightEye: THREE.Mesh;
+    private eyeBaseOffsetX = 0.04; // horizontal separation from center (half)
+    private eyeBaseOffsetY = 0.02; // up from head center
+    private eyeBaseOffsetZ = 0.06; // forward from head center (facing direction)
+    private eyeLookOffset = new THREE.Vector3(0, 0, 0);
+
+    // Mouth
+    private mouthMesh: THREE.Mesh;
+    private currentExpression: Expression = 'neutral';
+    private mouthMat: THREE.MeshBasicMaterial;
+
+    // Cosmetics
+    private headbandMesh: THREE.Mesh | null = null;
+    private leftWristband: THREE.Mesh | null = null;
+    private rightWristband: THREE.Mesh | null = null;
+    private currentHeadShape: 'circle' | 'square' | 'triangle' = 'circle';
+
+    private static readonly LIMB_RADIUS = 0.055;
+    private static readonly JOINT_RADIUS = 0.06;
 
     constructor(teamColor: number) {
         const shared = getSharedMaterials();
@@ -125,40 +161,118 @@ export class Stickman {
             this.group.add(mesh);
         }
 
-        // Head sphere
-        const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
-        // Head can stay unique or share, but there's only 14, so standard mat is fine
-        const headMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.3 });
+        // Head sphere — slightly larger for readability at distance
+        const headGeo = new THREE.SphereGeometry(0.17, 16, 16);
+        const headMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3 });
+        applyRimLighting(headMat, 0.4);
         this.headMesh = new THREE.Mesh(headGeo, headMat);
         this.headMesh.castShadow = true;
         this.group.add(this.headMesh);
 
-        // Jersey (torso quad) - UNIQUE per player for team colors
+        // Eyes - small white spheres on the front face of the head
+        const eyeGeo = new THREE.SphereGeometry(0.025, 8, 8);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        this.leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        this.rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        this.group.add(this.leftEye);
+        this.group.add(this.rightEye);
+
+        // Mouth - start with a thin box for neutral expression
+        this.mouthMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const mouthGeo = new THREE.BoxGeometry(0.06, 0.008, 0.008);
+        this.mouthMesh = new THREE.Mesh(mouthGeo, this.mouthMat);
+        this.group.add(this.mouthMesh);
+
+        // Jersey (torso) - 8 vertices forming a shirt shape
+        // 0=L_collar, 1=R_collar, 2=L_shoulder_out, 3=L_hip, 4=R_hip, 5=R_shoulder_out, 6=L_back, 7=R_back
         this.jerseyGeo = new THREE.BufferGeometry();
-        const jerseyPositions = new Float32Array([
-            0, 1.5, 0,   // neck
-            -0.25, 1.4, 0, // L shoulder
-            0, 0.85, 0,  // waist
-            0.25, 1.4, 0,  // R shoulder
+        const jerseyPositions = new Float32Array(8 * 3);
+        const jerseyIndices = new Uint16Array([
+            // Front panel (two quads split diagonally)
+            0, 2, 3,   // L_collar -> L_shoulder -> L_hip
+            0, 3, 4,   // L_collar -> L_hip -> R_hip
+            0, 4, 5,   // L_collar -> R_hip -> R_shoulder
+            0, 5, 1,   // L_collar -> R_shoulder -> R_collar
+            // Back panel
+            6, 3, 2,   // L_back -> L_hip -> L_shoulder
+            6, 4, 3,   // L_back -> R_hip -> L_hip
+            6, 5, 4,   // L_back -> R_shoulder -> R_hip
+            6, 7, 5,   // L_back -> R_back -> R_shoulder
+            // Top shoulder strip (visible from above)
+            0, 1, 7,   // collar top
+            0, 7, 6,   // collar top
         ]);
-        const jerseyIndices = new Uint16Array([0, 1, 3, 1, 2, 3]);
         this.jerseyGeo.setAttribute(
             'position',
             new THREE.BufferAttribute(jerseyPositions, 3),
         );
         this.jerseyGeo.setIndex(new THREE.BufferAttribute(jerseyIndices, 1));
+        // Ensure team color is bright enough to see — floor at luminance 0.25
+        const jerseyColor = new THREE.Color(teamColor);
+        const lum = jerseyColor.r * 0.299 + jerseyColor.g * 0.587 + jerseyColor.b * 0.114;
+        if (lum < 0.25) {
+            jerseyColor.lerp(new THREE.Color(0xffffff), 0.3);
+        }
         const jerseyMat = new THREE.MeshStandardMaterial({
-            color: teamColor,
+            color: jerseyColor,
             side: THREE.DoubleSide,
-            transparent: true,
-            opacity: 0.95,
-            emissive: teamColor,
-            emissiveIntensity: 0.2
+            emissive: jerseyColor,
+            emissiveIntensity: 0.5,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
         });
-        applyRimLighting(jerseyMat, 0.4);
+        applyRimLighting(jerseyMat, 0.6);
         this.jerseyMesh = new THREE.Mesh(this.jerseyGeo, jerseyMat);
         this.jerseyMesh.castShadow = true;
+        this.jerseyMesh.renderOrder = 1; // draw on top of limbs
         this.group.add(this.jerseyMesh);
+
+        // Shorts - 6 vertices: waist_L, waist_R, L_knee, R_knee, waist_front, waist_back
+        this.shortsGeo = new THREE.BufferGeometry();
+        const shortsPositions = new Float32Array(6 * 3);
+        const shortsIndices = new Uint16Array([
+            // Left leg panel
+            4, 0, 2,   // waist_front -> waist_L -> L_knee
+            5, 2, 0,   // waist_back -> L_knee -> waist_L
+            // Right leg panel
+            4, 3, 1,   // waist_front -> R_knee -> waist_R
+            5, 1, 3,   // waist_back -> waist_R -> R_knee
+            // Center crotch panels
+            4, 2, 3,   // waist_front -> L_knee -> R_knee
+            5, 3, 2,   // waist_back -> R_knee -> L_knee
+        ]);
+        this.shortsGeo.setAttribute(
+            'position',
+            new THREE.BufferAttribute(shortsPositions, 3),
+        );
+        this.shortsGeo.setIndex(new THREE.BufferAttribute(shortsIndices, 1));
+        // Shorts are a darker shade of team color (but still visible)
+        const darkerColor = new THREE.Color(jerseyColor).multiplyScalar(0.65);
+        const shortsMat = new THREE.MeshStandardMaterial({
+            color: darkerColor,
+            side: THREE.DoubleSide,
+            emissive: darkerColor,
+            emissiveIntensity: 0.35,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+        });
+        applyRimLighting(shortsMat, 0.4);
+        this.shortsMesh = new THREE.Mesh(this.shortsGeo, shortsMat);
+        this.shortsMesh.castShadow = true;
+        this.shortsMesh.renderOrder = 1;
+        this.group.add(this.shortsMesh);
+
+        // Shoes at ankles — small elongated spheres for ground contact readability
+        const shoeGeo = new THREE.SphereGeometry(0.07, 8, 6);
+        shoeGeo.scale(1.3, 0.7, 1.6); // flatter, longer shape
+        this.leftShoeMesh = new THREE.Mesh(shoeGeo, shared.shoe);
+        this.rightShoeMesh = new THREE.Mesh(shoeGeo.clone(), shared.shoe);
+        this.leftShoeMesh.castShadow = true;
+        this.rightShoeMesh.castShadow = true;
+        this.group.add(this.leftShoeMesh);
+        this.group.add(this.rightShoeMesh);
 
         // Controlled player indicator ring
         const ringGeo = new THREE.RingGeometry(0.5, 0.65, 32);
@@ -190,7 +304,7 @@ export class Stickman {
             const lz = localJoints[i * 3 + 2];
 
             this.worldJoints[i * 3] = position.x + lx * cos + lz * sin;
-            this.worldJoints[i * 3 + 1] = position.y + ly + 0.85; 
+            this.worldJoints[i * 3 + 1] = position.y + ly + 0.85;
             this.worldJoints[i * 3 + 2] = position.z - lx * sin + lz * cos;
 
             // Update joint sphere position
@@ -211,7 +325,7 @@ export class Stickman {
 
             const dist = start.distanceTo(end);
             const mesh = this.boneMeshes[i];
-            
+
             // Position at midpoint
             mesh.position.copy(start).lerp(end, 0.5);
             // Scale length (geometry was 1 unit long)
@@ -221,29 +335,158 @@ export class Stickman {
         }
 
         // Update head
-        this.headMesh.position.set(
-            this.worldJoints[0],
-            this.worldJoints[1],
-            this.worldJoints[2],
+        const headX = this.worldJoints[0];
+        const headY = this.worldJoints[1];
+        const headZ = this.worldJoints[2];
+        this.headMesh.position.set(headX, headY, headZ);
+
+        // Facing direction vector (in XZ plane)
+        const faceDirX = cos;
+        const faceDirZ = -sin;
+
+        // Perpendicular right vector (in XZ plane)
+        const rightX = -faceDirZ;
+        const rightZ = faceDirX;
+
+        // Update eyes to follow head and face forward
+        const lookX = this.eyeLookOffset.x;
+        const lookY = this.eyeLookOffset.y;
+        const lookZ = this.eyeLookOffset.z;
+
+        // Left eye: offset left, up, and forward relative to facing
+        this.leftEye.position.set(
+            headX + faceDirX * (this.eyeBaseOffsetZ + lookZ) - rightX * this.eyeBaseOffsetX + lookX,
+            headY + this.eyeBaseOffsetY + lookY,
+            headZ + faceDirZ * (this.eyeBaseOffsetZ + lookZ) - rightZ * this.eyeBaseOffsetX + lookZ * 0,
         );
+
+        // Right eye: offset right, up, and forward relative to facing
+        this.rightEye.position.set(
+            headX + faceDirX * (this.eyeBaseOffsetZ + lookZ) + rightX * this.eyeBaseOffsetX + lookX,
+            headY + this.eyeBaseOffsetY + lookY,
+            headZ + faceDirZ * (this.eyeBaseOffsetZ + lookZ) + rightZ * this.eyeBaseOffsetX + lookZ * 0,
+        );
+
+        // Update mouth position: below center of eyes, forward on face
+        this.mouthMesh.position.set(
+            headX + faceDirX * this.eyeBaseOffsetZ,
+            headY - 0.05,
+            headZ + faceDirZ * this.eyeBaseOffsetZ,
+        );
+        // Rotate mouth to face the same direction as the stickman
+        this.mouthMesh.rotation.y = facing;
 
         if (this.accentMesh) {
             this.accentMesh.position.set(
-                this.worldJoints[0],
-                this.worldJoints[1] + 0.18,
-                this.worldJoints[2],
+                headX,
+                headY + 0.18,
+                headZ,
             );
         }
 
-        // Update jersey quad
+        // Update headband position to follow head
+        if (this.headbandMesh) {
+            this.headbandMesh.position.set(headX, headY + 0.04, headZ);
+        }
+
+        // Update wristband positions (joints 4=L_wrist, 7=R_wrist)
+        if (this.leftWristband) {
+            this.leftWristband.position.set(
+                this.worldJoints[4 * 3],
+                this.worldJoints[4 * 3 + 1],
+                this.worldJoints[4 * 3 + 2],
+            );
+        }
+        if (this.rightWristband) {
+            this.rightWristband.position.set(
+                this.worldJoints[7 * 3],
+                this.worldJoints[7 * 3 + 1],
+                this.worldJoints[7 * 3 + 2],
+            );
+        }
+
+        // Update jersey torso shape (8 vertices)
+        // 0=L_collar, 1=R_collar, 2=L_shoulder_out, 3=L_hip, 4=R_hip, 5=R_shoulder_out, 6=L_back, 7=R_back
         const jerseyPos = this.jerseyGeo.attributes.position as THREE.BufferAttribute;
         const wj = this.worldJoints;
-        jerseyPos.setXYZ(0, wj[1 * 3], wj[1 * 3 + 1], wj[1 * 3 + 2]); // neck
-        jerseyPos.setXYZ(1, wj[2 * 3], wj[2 * 3 + 1], wj[2 * 3 + 2]); // L shoulder
-        jerseyPos.setXYZ(2, wj[8 * 3], wj[8 * 3 + 1], wj[8 * 3 + 2]); // waist
-        jerseyPos.setXYZ(3, wj[5 * 3], wj[5 * 3 + 1], wj[5 * 3 + 2]); // R shoulder
+
+        const neckX = wj[1 * 3], neckY = wj[1 * 3 + 1], neckZ = wj[1 * 3 + 2];
+        const lShX = wj[2 * 3], lShY = wj[2 * 3 + 1], lShZ = wj[2 * 3 + 2];
+        const rShX = wj[5 * 3], rShY = wj[5 * 3 + 1], rShZ = wj[5 * 3 + 2];
+        const waistX = wj[8 * 3], waistY = wj[8 * 3 + 1], waistZ = wj[8 * 3 + 2];
+
+        // Shoulder direction (left to right) for widening
+        const sdx = rShX - lShX;
+        const sdz = rShZ - lShZ;
+        const sdLen = Math.sqrt(sdx * sdx + sdz * sdz) || 1;
+        const snx = sdx / sdLen;
+        const snz = sdz / sdLen;
+
+        // Forward direction (perpendicular to shoulder line in XZ plane)
+        const fwdX = -snz;
+        const fwdZ = snx;
+
+        const WIDEN = 0.14;   // extra width beyond shoulder joints
+        const DEPTH = 0.14;   // front/back depth
+
+        // Two collar points at neck height, spread apart for a proper neckline
+        const collarSpread = 0.06;
+        // 0: L collar (front)
+        jerseyPos.setXYZ(0,
+            neckX - snx * collarSpread + fwdX * DEPTH * 0.5, neckY,
+            neckZ - snz * collarSpread + fwdZ * DEPTH * 0.5);
+        // 1: R collar (front)
+        jerseyPos.setXYZ(1,
+            neckX + snx * collarSpread + fwdX * DEPTH * 0.5, neckY,
+            neckZ + snz * collarSpread + fwdZ * DEPTH * 0.5);
+        // 2: L shoulder outer
+        jerseyPos.setXYZ(2, lShX - snx * WIDEN, lShY, lShZ - snz * WIDEN);
+        // 3: L hip
+        jerseyPos.setXYZ(3, waistX - snx * (WIDEN + 0.02), waistY, waistZ - snz * (WIDEN + 0.02));
+        // 4: R hip
+        jerseyPos.setXYZ(4, waistX + snx * (WIDEN + 0.02), waistY, waistZ + snz * (WIDEN + 0.02));
+        // 5: R shoulder outer
+        jerseyPos.setXYZ(5, rShX + snx * WIDEN, rShY, rShZ + snz * WIDEN);
+        // 6: L collar (back)
+        jerseyPos.setXYZ(6,
+            neckX - snx * collarSpread - fwdX * DEPTH * 0.5, neckY,
+            neckZ - snz * collarSpread - fwdZ * DEPTH * 0.5);
+        // 7: R collar (back)
+        jerseyPos.setXYZ(7,
+            neckX + snx * collarSpread - fwdX * DEPTH * 0.5, neckY,
+            neckZ + snz * collarSpread - fwdZ * DEPTH * 0.5);
+
         jerseyPos.needsUpdate = true;
         this.jerseyGeo.computeVertexNormals();
+
+        // Update shorts (6 vertices: 0=waist_L, 1=waist_R, 2=L_knee, 3=R_knee, 4=waist_front, 5=waist_back)
+        const shortsPos = this.shortsGeo.attributes.position as THREE.BufferAttribute;
+        const lKneeX = wj[9 * 3], lKneeY = wj[9 * 3 + 1], lKneeZ = wj[9 * 3 + 2];
+        const rKneeX = wj[11 * 3], rKneeY = wj[11 * 3 + 1], rKneeZ = wj[11 * 3 + 2];
+        // Mid-thigh point (shorts end above knee)
+        const shortsFrac = 0.55; // how far down from waist to knee
+        const lMidX = waistX + (lKneeX - waistX) * shortsFrac;
+        const lMidY = waistY + (lKneeY - waistY) * shortsFrac;
+        const lMidZ = waistZ + (lKneeZ - waistZ) * shortsFrac;
+        const rMidX = waistX + (rKneeX - waistX) * shortsFrac;
+        const rMidY = waistY + (rKneeY - waistY) * shortsFrac;
+        const rMidZ = waistZ + (rKneeZ - waistZ) * shortsFrac;
+
+        const SHORTS_WIDEN = 0.09;
+        shortsPos.setXYZ(0, waistX - snx * (WIDEN + 0.02), waistY, waistZ - snz * (WIDEN + 0.02)); // waist L
+        shortsPos.setXYZ(1, waistX + snx * (WIDEN + 0.02), waistY, waistZ + snz * (WIDEN + 0.02)); // waist R
+        shortsPos.setXYZ(2, lMidX - snx * SHORTS_WIDEN, lMidY, lMidZ - snz * SHORTS_WIDEN); // L mid-thigh
+        shortsPos.setXYZ(3, rMidX + snx * SHORTS_WIDEN, rMidY, rMidZ + snz * SHORTS_WIDEN); // R mid-thigh
+        shortsPos.setXYZ(4, waistX + fwdX * DEPTH * 0.5, waistY, waistZ + fwdZ * DEPTH * 0.5); // waist front
+        shortsPos.setXYZ(5, waistX - fwdX * DEPTH * 0.5, waistY, waistZ - fwdZ * DEPTH * 0.5); // waist back
+        shortsPos.needsUpdate = true;
+        this.shortsGeo.computeVertexNormals();
+
+        // Update shoe positions (at ankles, joints 10=L_ankle, 12=R_ankle)
+        this.leftShoeMesh.position.set(wj[10 * 3], wj[10 * 3 + 1] - 0.02, wj[10 * 3 + 2]);
+        this.leftShoeMesh.rotation.y = facing;
+        this.rightShoeMesh.position.set(wj[12 * 3], wj[12 * 3 + 1] - 0.02, wj[12 * 3 + 2]);
+        this.rightShoeMesh.rotation.y = facing;
 
         // Update indicator ring position
         if (this.indicatorRing.visible) {
@@ -251,8 +494,149 @@ export class Stickman {
         }
     }
 
-    updateResolution(_width: number, _height: number): void {
-        // No longer needed for volumetric meshes
+    /** Shift eye positions slightly to simulate looking in a direction */
+    setLookDirection(x: number, y: number, z: number): void {
+        const maxOffset = 0.015;
+        const len = Math.sqrt(x * x + y * y + z * z);
+        if (len > 0) {
+            const scale = Math.min(len, 1) * maxOffset;
+            this.eyeLookOffset.set(
+                (x / len) * scale,
+                (y / len) * scale,
+                (z / len) * scale,
+            );
+        } else {
+            this.eyeLookOffset.set(0, 0, 0);
+        }
+    }
+
+    /** Change the mouth expression */
+    setExpression(expression: Expression): void {
+        if (this.currentExpression === expression) return;
+        this.currentExpression = expression;
+
+        // Remove old mouth mesh
+        this.group.remove(this.mouthMesh);
+        this.mouthMesh.geometry.dispose();
+
+        const oldPos = this.mouthMesh.position.clone();
+        const oldRotY = this.mouthMesh.rotation.y;
+
+        let newGeo: THREE.BufferGeometry;
+
+        switch (expression) {
+            case 'neutral':
+                // Straight horizontal line (thin box)
+                newGeo = new THREE.BoxGeometry(0.06, 0.008, 0.008);
+                break;
+            case 'happy':
+                // Upward curve - torus arc rotated to smile
+                newGeo = new THREE.TorusGeometry(0.03, 0.005, 6, 12, Math.PI);
+                newGeo.rotateX(Math.PI); // flip so curve goes up
+                break;
+            case 'frustrated':
+                // Downward curve - torus arc
+                newGeo = new THREE.TorusGeometry(0.03, 0.005, 6, 12, Math.PI);
+                // Default orientation already curves down
+                break;
+            case 'shocked':
+                // Small circle (ring)
+                newGeo = new THREE.TorusGeometry(0.02, 0.005, 8, 16);
+                break;
+        }
+
+        this.mouthMesh = new THREE.Mesh(newGeo, this.mouthMat);
+        this.mouthMesh.position.copy(oldPos);
+        this.mouthMesh.rotation.y = oldRotY;
+        this.group.add(this.mouthMesh);
+    }
+
+    // --- Cosmetic methods ---
+
+    /** Add or remove a headband torus around the head */
+    setHeadband(enabled: boolean, color: number): void {
+        if (this.headbandMesh) {
+            this.group.remove(this.headbandMesh);
+            this.headbandMesh.geometry.dispose();
+            (this.headbandMesh.material as THREE.Material).dispose();
+            this.headbandMesh = null;
+        }
+
+        if (!enabled) return;
+
+        const geo = new THREE.TorusGeometry(0.18, 0.012, 8, 24);
+        geo.rotateX(Math.PI / 2);
+        const mat = new THREE.MeshStandardMaterial({
+            color,
+            emissive: color,
+            emissiveIntensity: 0.3,
+        });
+        this.headbandMesh = new THREE.Mesh(geo, mat);
+        this.group.add(this.headbandMesh);
+    }
+
+    /** Add or remove wristband meshes at both wrist joints */
+    setWristbands(enabled: boolean): void {
+        // Clean up existing
+        if (this.leftWristband) {
+            this.group.remove(this.leftWristband);
+            this.leftWristband.geometry.dispose();
+            (this.leftWristband.material as THREE.Material).dispose();
+            this.leftWristband = null;
+        }
+        if (this.rightWristband) {
+            this.group.remove(this.rightWristband);
+            this.rightWristband.geometry.dispose();
+            (this.rightWristband.material as THREE.Material).dispose();
+            this.rightWristband = null;
+        }
+
+        if (!enabled) return;
+
+        const bandGeo = new THREE.TorusGeometry(0.05, 0.01, 8, 16);
+        bandGeo.rotateX(Math.PI / 2);
+        const bandMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            emissive: 0xffffff,
+            emissiveIntensity: 0.2,
+        });
+
+        this.leftWristband = new THREE.Mesh(bandGeo, bandMat);
+        this.rightWristband = new THREE.Mesh(bandGeo.clone(), bandMat.clone());
+        this.group.add(this.leftWristband);
+        this.group.add(this.rightWristband);
+    }
+
+    /** Scale the head mesh by a multiplier */
+    setHeadSize(size: number): void {
+        this.headMesh.scale.setScalar(size);
+    }
+
+    /** Swap head geometry to a different shape */
+    setHeadShape(shape: 'circle' | 'square' | 'triangle'): void {
+        if (this.currentHeadShape === shape) return;
+        this.currentHeadShape = shape;
+
+        // Dispose old geometry
+        this.headMesh.geometry.dispose();
+
+        switch (shape) {
+            case 'circle':
+                this.headMesh.geometry = new THREE.SphereGeometry(0.17, 16, 16);
+                break;
+            case 'square':
+                this.headMesh.geometry = new THREE.BoxGeometry(0.27, 0.27, 0.27);
+                break;
+            case 'triangle':
+                this.headMesh.geometry = new THREE.ConeGeometry(0.17, 0.34, 16);
+                break;
+        }
+    }
+
+    /** Scale the stickman's height by a multiplier (0.85-1.15 range) */
+    setHeight(multiplier: number): void {
+        const clamped = Math.max(0.85, Math.min(1.15, multiplier));
+        this.group.scale.y = clamped;
     }
 
     setControlled(controlled: boolean): void {
@@ -260,9 +644,16 @@ export class Stickman {
     }
 
     setJerseyColor(color: number): void {
+        const c = new THREE.Color(color);
+        const lum = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
+        if (lum < 0.25) c.lerp(new THREE.Color(0xffffff), 0.3);
         const mat = this.jerseyMesh.material as THREE.MeshStandardMaterial;
-        mat.color.set(color);
-        mat.emissive.set(color);
+        mat.color.copy(c);
+        mat.emissive.copy(c);
+        const shortsMat = this.shortsMesh.material as THREE.MeshStandardMaterial;
+        const darkerColor = c.clone().multiplyScalar(0.65);
+        shortsMat.color.copy(darkerColor);
+        shortsMat.emissive.copy(darkerColor);
     }
 
     setAccent(colorHex: string | null): void {
@@ -280,7 +671,7 @@ export class Stickman {
 
         const geo = new THREE.TorusGeometry(0.16, 0.015, 8, 24);
         geo.rotateX(Math.PI / 2);
-        const mat = new THREE.MeshStandardMaterial({ 
+        const mat = new THREE.MeshStandardMaterial({
             color: colorHex,
             emissive: colorHex,
             emissiveIntensity: 0.5
@@ -298,9 +689,39 @@ export class Stickman {
             m.geometry.dispose();
             (m.material as THREE.Material).dispose();
         });
-        (this.headMesh.geometry as THREE.SphereGeometry).dispose();
+        (this.headMesh.geometry as THREE.BufferGeometry).dispose();
         (this.headMesh.material as THREE.Material).dispose();
         this.jerseyGeo.dispose();
         (this.jerseyMesh.material as THREE.Material).dispose();
+        this.shortsGeo.dispose();
+        (this.shortsMesh.material as THREE.Material).dispose();
+        this.leftShoeMesh.geometry.dispose();
+        this.rightShoeMesh.geometry.dispose();
+
+        // Dispose eyes
+        this.leftEye.geometry.dispose();
+        (this.leftEye.material as THREE.Material).dispose();
+        this.rightEye.geometry.dispose();
+        (this.rightEye.material as THREE.Material).dispose();
+
+        // Dispose mouth
+        this.mouthMesh.geometry.dispose();
+        this.mouthMat.dispose();
+
+        // Dispose headband
+        if (this.headbandMesh) {
+            this.headbandMesh.geometry.dispose();
+            (this.headbandMesh.material as THREE.Material).dispose();
+        }
+
+        // Dispose wristbands
+        if (this.leftWristband) {
+            this.leftWristband.geometry.dispose();
+            (this.leftWristband.material as THREE.Material).dispose();
+        }
+        if (this.rightWristband) {
+            this.rightWristband.geometry.dispose();
+            (this.rightWristband.material as THREE.Material).dispose();
+        }
     }
 }

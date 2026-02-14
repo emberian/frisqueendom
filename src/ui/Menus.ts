@@ -46,6 +46,133 @@ export interface QuickMatchConfig {
     randomSeed?: number;
 }
 
+export interface MatchSetupConfig {
+    scoreTarget: number;
+    winByTwo: boolean;
+    pointCap: number;
+    timeOfDay: string;
+    venue: string;
+    wind: string;
+}
+
+let _matchSetupConfig: MatchSetupConfig = {
+    scoreTarget: 15,
+    winByTwo: true,
+    pointCap: 0,
+    timeOfDay: 'midday',
+    venue: 'park',
+    wind: 'calm',
+};
+
+export function getMatchSetupConfig(): MatchSetupConfig {
+    return { ..._matchSetupConfig };
+}
+
+// ---------------------------------------------------------------------------
+// Scene Transition Helpers
+// ---------------------------------------------------------------------------
+
+let _transitionOverlay: HTMLDivElement | null = null;
+
+function ensureTransitionOverlay(): HTMLDivElement {
+    if (_transitionOverlay && _transitionOverlay.parentElement) {
+        return _transitionOverlay;
+    }
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+        'position:fixed;inset:0;z-index:9999;pointer-events:none;background:#000;opacity:0;' +
+        'transition:none;';
+    document.body.appendChild(overlay);
+    _transitionOverlay = overlay;
+    return overlay;
+}
+
+export function fadeToBlack(duration: number): Promise<void> {
+    return new Promise((resolve) => {
+        const overlay = ensureTransitionOverlay();
+        overlay.style.transition = 'none';
+        overlay.style.opacity = '0';
+        overlay.style.pointerEvents = 'auto';
+        // Force reflow so the starting opacity is applied before the transition kicks in
+        void overlay.offsetHeight;
+        overlay.style.transition = `opacity ${duration}ms ease`;
+        overlay.style.opacity = '1';
+        const onEnd = () => {
+            overlay.removeEventListener('transitionend', onEnd);
+            resolve();
+        };
+        overlay.addEventListener('transitionend', onEnd);
+        // Safety timeout in case transitionend doesn't fire
+        setTimeout(() => {
+            overlay.removeEventListener('transitionend', onEnd);
+            resolve();
+        }, duration + 50);
+    });
+}
+
+export function fadeFromBlack(duration: number): Promise<void> {
+    return new Promise((resolve) => {
+        const overlay = ensureTransitionOverlay();
+        overlay.style.transition = 'none';
+        overlay.style.opacity = '1';
+        void overlay.offsetHeight;
+        overlay.style.transition = `opacity ${duration}ms ease`;
+        overlay.style.opacity = '0';
+        const onEnd = () => {
+            overlay.removeEventListener('transitionend', onEnd);
+            overlay.style.pointerEvents = 'none';
+            resolve();
+        };
+        overlay.addEventListener('transitionend', onEnd);
+        setTimeout(() => {
+            overlay.removeEventListener('transitionend', onEnd);
+            overlay.style.pointerEvents = 'none';
+            resolve();
+        }, duration + 50);
+    });
+}
+
+export function slideOverlay(direction: 'in' | 'out', duration: number): Promise<void> {
+    return new Promise((resolve) => {
+        const overlay = ensureTransitionOverlay();
+        if (direction === 'in') {
+            overlay.style.transition = 'none';
+            overlay.style.opacity = '1';
+            overlay.style.transform = 'translateY(-100%)';
+            overlay.style.pointerEvents = 'auto';
+            void overlay.offsetHeight;
+            overlay.style.transition = `transform ${duration}ms ease`;
+            overlay.style.transform = 'translateY(0)';
+        } else {
+            overlay.style.transition = 'none';
+            overlay.style.opacity = '1';
+            overlay.style.transform = 'translateY(0)';
+            void overlay.offsetHeight;
+            overlay.style.transition = `transform ${duration}ms ease`;
+            overlay.style.transform = 'translateY(-100%)';
+        }
+        const onEnd = () => {
+            overlay.removeEventListener('transitionend', onEnd);
+            if (direction === 'out') {
+                overlay.style.pointerEvents = 'none';
+                overlay.style.opacity = '0';
+                overlay.style.transform = '';
+            }
+            resolve();
+        };
+        overlay.addEventListener('transitionend', onEnd);
+        setTimeout(() => {
+            overlay.removeEventListener('transitionend', onEnd);
+            if (direction === 'out') {
+                overlay.style.pointerEvents = 'none';
+                overlay.style.opacity = '0';
+                overlay.style.transform = '';
+            }
+            resolve();
+        }, duration + 50);
+    });
+}
+
 export class MenuSystem {
     private container: HTMLElement;
     private currentState: MenuState = 'title';
@@ -86,10 +213,28 @@ export class MenuSystem {
         };
         set('team-color', config.color);
         set('difficulty', config.difficulty);
-        set('game-to', config.gameTo);
-        set('time-of-day', config.timeOfDay);
         set('weather', config.weather);
         if (config.multiplayerMode) set('multiplayer-mode', config.multiplayerMode);
+
+        // Apply numeric/string config into the module-level config and re-activate buttons
+        if (config.gameTo != null) {
+            _matchSetupConfig.scoreTarget = config.gameTo;
+        }
+        if (config.timeOfDay != null) {
+            _matchSetupConfig.timeOfDay = config.timeOfDay;
+        }
+
+        // Activate the correct button in a group based on current config value
+        const activateGroupBtn = (groupId: string, value: string) => {
+            const group = this.container.querySelector('#' + groupId);
+            if (!group) return;
+            group.querySelectorAll('.setup-opt-btn').forEach((btn) => {
+                btn.classList.toggle('active', (btn as HTMLElement).dataset.val === value);
+            });
+        };
+
+        activateGroupBtn('score-target-group', String(_matchSetupConfig.scoreTarget));
+        activateGroupBtn('time-of-day-group', _matchSetupConfig.timeOfDay);
     }
 
     private getActiveMenuSettings(): GameSettings {
@@ -565,6 +710,7 @@ export class MenuSystem {
             window.location.hostname === 'localhost'
                 ? 'ws://localhost:8787/ws'
                 : `wss://${window.location.host}/ws`;
+        const cfg = _matchSetupConfig;
         menu.innerHTML = `
             <h1>Quick Match</h1>
             <p class="menu-subtitle">Set the vibe, then launch the point.</p>
@@ -576,29 +722,64 @@ export class MenuSystem {
                     <option value="green">Green</option>
                     <option value="yellow">Yellow</option>
                 </select>
-                
+
                 <label>Opponent Difficulty:</label>
                 <select id="difficulty">
                     <option value="easy">Easy</option>
                     <option value="normal" selected>Normal</option>
                     <option value="hard">Hard</option>
                 </select>
-                
-                <label>Game to:</label>
-                <select id="game-to">
-                    <option value="7">7 points</option>
-                    <option value="11">11 points</option>
-                    <option value="15" selected>15 points</option>
-                </select>
+
+                <label>Score to:</label>
+                <div class="setup-btn-group" id="score-target-group">
+                    <button class="setup-opt-btn${cfg.scoreTarget === 11 ? ' active' : ''}" data-val="11">11</button>
+                    <button class="setup-opt-btn${cfg.scoreTarget === 13 ? ' active' : ''}" data-val="13">13</button>
+                    <button class="setup-opt-btn${cfg.scoreTarget === 15 ? ' active' : ''}" data-val="15">15</button>
+                    <button class="setup-opt-btn${cfg.scoreTarget !== 11 && cfg.scoreTarget !== 13 && cfg.scoreTarget !== 15 ? ' active' : ''}" data-val="custom" id="score-custom-btn">Custom</button>
+                </div>
+                <input type="number" id="score-custom-input" min="1" max="99" value="${cfg.scoreTarget}"
+                    style="display:${cfg.scoreTarget !== 11 && cfg.scoreTarget !== 13 && cfg.scoreTarget !== 15 ? 'block' : 'none'};width:80px;padding:6px;border-radius:7px;border:1px solid rgba(255,255,255,0.28);background:rgba(255,255,255,0.1);color:white;font-family:monospace;">
+
+                <label>Win by 2:</label>
+                <div class="setup-btn-group" id="win-by-two-group">
+                    <button class="setup-opt-btn${cfg.winByTwo ? ' active' : ''}" data-val="yes">Yes</button>
+                    <button class="setup-opt-btn${!cfg.winByTwo ? ' active' : ''}" data-val="no">No</button>
+                </div>
+
+                <label>Point Cap:</label>
+                <div class="setup-btn-group" id="point-cap-group">
+                    <button class="setup-opt-btn${cfg.pointCap === 0 ? ' active' : ''}" data-val="0">None</button>
+                    <button class="setup-opt-btn${cfg.pointCap === 17 ? ' active' : ''}" data-val="17">17</button>
+                    <button class="setup-opt-btn${cfg.pointCap === 19 ? ' active' : ''}" data-val="19">19</button>
+                    <button class="setup-opt-btn${cfg.pointCap !== 0 && cfg.pointCap !== 17 && cfg.pointCap !== 19 ? ' active' : ''}" data-val="custom" id="cap-custom-btn">Custom</button>
+                </div>
+                <input type="number" id="cap-custom-input" min="1" max="99" value="${cfg.pointCap || ''}"
+                    style="display:${cfg.pointCap !== 0 && cfg.pointCap !== 17 && cfg.pointCap !== 19 ? 'block' : 'none'};width:80px;padding:6px;border-radius:7px;border:1px solid rgba(255,255,255,0.28);background:rgba(255,255,255,0.1);color:white;font-family:monospace;">
 
                 <label>Time of Day:</label>
-                <select id="time-of-day">
-                    <option value="morning">Morning</option>
-                    <option value="midday" selected>Midday</option>
-                    <option value="golden_hour">Golden Hour</option>
-                    <option value="sunset">Sunset</option>
-                    <option value="night">Night</option>
-                </select>
+                <div class="setup-btn-group" id="time-of-day-group">
+                    <button class="setup-opt-btn${cfg.timeOfDay === 'morning' ? ' active' : ''}" data-val="morning">Morning</button>
+                    <button class="setup-opt-btn${cfg.timeOfDay === 'midday' ? ' active' : ''}" data-val="midday">Midday</button>
+                    <button class="setup-opt-btn${cfg.timeOfDay === 'golden_hour' ? ' active' : ''}" data-val="golden_hour">Golden Hour</button>
+                    <button class="setup-opt-btn${cfg.timeOfDay === 'sunset' ? ' active' : ''}" data-val="sunset">Sunset</button>
+                    <button class="setup-opt-btn${cfg.timeOfDay === 'night' ? ' active' : ''}" data-val="night">Night</button>
+                </div>
+
+                <label>Venue:</label>
+                <div class="setup-btn-group" id="venue-group">
+                    <button class="setup-opt-btn${cfg.venue === 'park' ? ' active' : ''}" data-val="park">Park</button>
+                    <button class="setup-opt-btn${cfg.venue === 'tournament' ? ' active' : ''}" data-val="tournament">Tournament</button>
+                    <button class="setup-opt-btn${cfg.venue === 'stadium' ? ' active' : ''}" data-val="stadium">Stadium</button>
+                </div>
+
+                <label>Wind:</label>
+                <div class="setup-btn-group" id="wind-group">
+                    <button class="setup-opt-btn${cfg.wind === 'calm' ? ' active' : ''}" data-val="calm">Calm</button>
+                    <button class="setup-opt-btn${cfg.wind === 'breezy' ? ' active' : ''}" data-val="breezy">Breezy</button>
+                    <button class="setup-opt-btn${cfg.wind === 'windy' ? ' active' : ''}" data-val="windy">Windy</button>
+                    <button class="setup-opt-btn${cfg.wind === 'gusty' ? ' active' : ''}" data-val="gusty">Gusty</button>
+                    <button class="setup-opt-btn${cfg.wind === 'random' ? ' active' : ''}" data-val="random">Random</button>
+                </div>
 
                 <label>Weather:</label>
                 <select id="weather">
@@ -633,8 +814,93 @@ export class MenuSystem {
                 <button class="menu-btn" id="watch-sim">Watch Sim</button>
                 <button class="menu-btn" id="back">Back</button>
             </div>
+
+            <style>
+                .setup-btn-group {
+                    display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px;
+                }
+                .setup-opt-btn {
+                    padding:6px 12px; border-radius:8px;
+                    border:1px solid rgba(255,255,255,0.26);
+                    background:rgba(7,20,35,0.85);
+                    color:rgba(255,255,255,0.88); font-family:monospace; font-size:12px;
+                    letter-spacing:0.06em; cursor:pointer;
+                    transition:background 0.15s, border-color 0.15s;
+                }
+                .setup-opt-btn:hover {
+                    background:rgba(20,50,80,0.9);
+                    border-color:rgba(255,255,255,0.45);
+                }
+                .setup-opt-btn.active {
+                    background:linear-gradient(150deg,rgba(255,209,102,0.22),rgba(255,122,34,0.24));
+                    border-color:rgba(255,209,102,0.72);
+                    color:white; font-weight:bold;
+                }
+            </style>
         `;
         this.container.appendChild(menu);
+
+        // --- Wire up button-group config selectors ---
+        const wireButtonGroup = (
+            groupId: string,
+            onSelect: (val: string) => void,
+        ) => {
+            const group = menu.querySelector(`#${groupId}`);
+            if (!group) return;
+            group.querySelectorAll<HTMLButtonElement>('.setup-opt-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    group.querySelectorAll('.setup-opt-btn').forEach((b) => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    onSelect(btn.dataset.val || '');
+                });
+            });
+        };
+
+        const scoreCustomInput = menu.querySelector('#score-custom-input') as HTMLInputElement;
+        wireButtonGroup('score-target-group', (val) => {
+            if (val === 'custom') {
+                scoreCustomInput.style.display = 'block';
+                scoreCustomInput.focus();
+            } else {
+                scoreCustomInput.style.display = 'none';
+                cfg.scoreTarget = parseInt(val, 10);
+            }
+        });
+        scoreCustomInput?.addEventListener('input', () => {
+            const v = parseInt(scoreCustomInput.value, 10);
+            if (v > 0 && v < 100) cfg.scoreTarget = v;
+        });
+
+        wireButtonGroup('win-by-two-group', (val) => {
+            cfg.winByTwo = val === 'yes';
+        });
+
+        const capCustomInput = menu.querySelector('#cap-custom-input') as HTMLInputElement;
+        wireButtonGroup('point-cap-group', (val) => {
+            if (val === 'custom') {
+                capCustomInput.style.display = 'block';
+                capCustomInput.focus();
+            } else {
+                capCustomInput.style.display = 'none';
+                cfg.pointCap = parseInt(val, 10);
+            }
+        });
+        capCustomInput?.addEventListener('input', () => {
+            const v = parseInt(capCustomInput.value, 10);
+            if (v > 0 && v < 100) cfg.pointCap = v;
+        });
+
+        wireButtonGroup('time-of-day-group', (val) => {
+            cfg.timeOfDay = val;
+        });
+
+        wireButtonGroup('venue-group', (val) => {
+            cfg.venue = val;
+        });
+
+        wireButtonGroup('wind-group', (val) => {
+            cfg.wind = val;
+        });
 
         const multiplayerModeEl = menu.querySelector(
             '#multiplayer-mode',
@@ -668,8 +934,8 @@ export class MenuSystem {
         menu.querySelector('#start-match')?.addEventListener('click', () => {
             const color = (menu.querySelector('#team-color') as HTMLSelectElement).value;
             const difficulty = (menu.querySelector('#difficulty') as HTMLSelectElement).value;
-            const gameTo = parseInt((menu.querySelector('#game-to') as HTMLSelectElement).value);
-            const timeOfDay = (menu.querySelector('#time-of-day') as HTMLSelectElement).value;
+            const gameTo = cfg.scoreTarget;
+            const timeOfDay = cfg.timeOfDay;
             const weather = (menu.querySelector('#weather') as HTMLSelectElement).value;
             const multiplayerMode = (menu.querySelector(
                 '#multiplayer-mode',
@@ -678,6 +944,9 @@ export class MenuSystem {
             const lanRoom = lanRoomInput.value
                 .trim()
                 .slice(0, 64);
+
+            // Persist the full config for external consumers
+            _matchSetupConfig = { ...cfg };
 
             if (this.navigate) {
                 const p: Record<string, string> = { color, difficulty, gameTo: String(gameTo) };
@@ -715,9 +984,12 @@ export class MenuSystem {
         menu.querySelector('#watch-sim')?.addEventListener('click', () => {
             const color = (menu.querySelector('#team-color') as HTMLSelectElement).value;
             const difficulty = (menu.querySelector('#difficulty') as HTMLSelectElement).value;
-            const gameTo = parseInt((menu.querySelector('#game-to') as HTMLSelectElement).value);
-            const timeOfDay = (menu.querySelector('#time-of-day') as HTMLSelectElement).value;
+            const gameTo = cfg.scoreTarget;
+            const timeOfDay = cfg.timeOfDay;
             const weather = (menu.querySelector('#weather') as HTMLSelectElement).value;
+
+            // Persist the full config for external consumers
+            _matchSetupConfig = { ...cfg };
 
             if (this.navigate) {
                 const p: Record<string, string> = { color, difficulty, gameTo: String(gameTo) };

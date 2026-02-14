@@ -15,12 +15,118 @@ export class SpectatorOverlay {
     private viewButtons: Record<SpectatorView, HTMLButtonElement>;
     private speedButtons: Array<{ speed: number; button: HTMLButtonElement }> = [];
     private pauseButton: HTMLButtonElement;
+
+    // Broadcast-style top bar elements
+    private broadcastBar: HTMLDivElement;
+    private homeNameEl: HTMLSpanElement;
+    private awayNameEl: HTMLSpanElement;
+    private homeScoreEl: HTMLSpanElement;
+    private awayScoreEl: HTMLSpanElement;
+    private possessionEl: HTMLDivElement;
+    private playerInfoEl: HTMLDivElement;
+    private stallCountEl: HTMLDivElement;
+    private playDescEl: HTMLDivElement;
+    private playDescTimer: ReturnType<typeof setTimeout> | null = null;
+
     private readonly onResize = () => {
         this.applyResponsiveLayout();
     };
 
     constructor(handlers: SpectatorOverlayHandlers) {
         const ui = document.getElementById('ui')!;
+
+        // --- Broadcast-style top scoreboard bar ---
+        this.broadcastBar = document.createElement('div');
+        this.broadcastBar.style.cssText =
+            'position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:45;' +
+            'display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;pointer-events:none;';
+        ui.appendChild(this.broadcastBar);
+
+        // Score row
+        const scoreRow = document.createElement('div');
+        scoreRow.style.cssText =
+            'display:flex;align-items:center;gap:0;border-radius:12px;overflow:hidden;' +
+            'border:1px solid rgba(255,255,255,0.22);backdrop-filter:blur(6px);' +
+            'box-shadow:0 8px 28px rgba(0,0,0,0.5);';
+        this.broadcastBar.appendChild(scoreRow);
+
+        this.homeNameEl = document.createElement('span');
+        this.homeNameEl.style.cssText =
+            'padding:8px 14px;background:rgba(143,220,255,0.18);font-family:monospace;font-size:14px;' +
+            'letter-spacing:0.1em;text-transform:uppercase;color:#8fdcff;font-weight:bold;';
+        this.homeNameEl.textContent = 'HOME';
+        scoreRow.appendChild(this.homeNameEl);
+
+        this.homeScoreEl = document.createElement('span');
+        this.homeScoreEl.style.cssText =
+            'padding:8px 16px;background:rgba(6,18,32,0.92);font-family:monospace;font-size:28px;' +
+            'font-weight:bold;color:white;min-width:44px;text-align:center;';
+        this.homeScoreEl.textContent = '0';
+        scoreRow.appendChild(this.homeScoreEl);
+
+        const divider = document.createElement('span');
+        divider.style.cssText =
+            'padding:8px 6px;background:rgba(6,18,32,0.92);font-family:monospace;font-size:14px;' +
+            'color:rgba(255,255,255,0.35);';
+        divider.textContent = '-';
+        scoreRow.appendChild(divider);
+
+        this.awayScoreEl = document.createElement('span');
+        this.awayScoreEl.style.cssText =
+            'padding:8px 16px;background:rgba(6,18,32,0.92);font-family:monospace;font-size:28px;' +
+            'font-weight:bold;color:white;min-width:44px;text-align:center;';
+        this.awayScoreEl.textContent = '0';
+        scoreRow.appendChild(this.awayScoreEl);
+
+        this.awayNameEl = document.createElement('span');
+        this.awayNameEl.style.cssText =
+            'padding:8px 14px;background:rgba(255,215,160,0.18);font-family:monospace;font-size:14px;' +
+            'letter-spacing:0.1em;text-transform:uppercase;color:#ffd7a0;font-weight:bold;';
+        this.awayNameEl.textContent = 'AWAY';
+        scoreRow.appendChild(this.awayNameEl);
+
+        // Possession + player info row
+        const infoRow = document.createElement('div');
+        infoRow.style.cssText =
+            'display:flex;align-items:center;gap:8px;';
+        this.broadcastBar.appendChild(infoRow);
+
+        this.possessionEl = document.createElement('div');
+        this.possessionEl.style.cssText =
+            'padding:3px 10px;border-radius:8px;background:rgba(6,18,32,0.82);' +
+            'border:1px solid rgba(255,255,255,0.18);font-family:monospace;font-size:11px;' +
+            'letter-spacing:0.06em;color:rgba(255,255,255,0.88);text-transform:uppercase;';
+        this.possessionEl.textContent = '';
+        infoRow.appendChild(this.possessionEl);
+
+        this.playerInfoEl = document.createElement('div');
+        this.playerInfoEl.style.cssText =
+            'padding:3px 10px;border-radius:8px;background:rgba(6,18,32,0.82);' +
+            'border:1px solid rgba(255,255,255,0.18);font-family:monospace;font-size:11px;' +
+            'color:rgba(255,255,255,0.82);';
+        this.playerInfoEl.textContent = '';
+        infoRow.appendChild(this.playerInfoEl);
+
+        this.stallCountEl = document.createElement('div');
+        this.stallCountEl.style.cssText =
+            'padding:3px 10px;border-radius:8px;background:rgba(6,18,32,0.82);' +
+            'border:1px solid rgba(255,255,255,0.18);font-family:monospace;font-size:13px;' +
+            'font-weight:bold;color:white;min-width:28px;text-align:center;';
+        this.stallCountEl.textContent = '';
+        infoRow.appendChild(this.stallCountEl);
+
+        // Play description (floating, centered)
+        this.playDescEl = document.createElement('div');
+        this.playDescEl.style.cssText =
+            'position:absolute;top:120px;left:50%;transform:translateX(-50%);z-index:45;' +
+            'padding:8px 18px;border-radius:10px;background:rgba(6,18,32,0.88);' +
+            'border:1px solid rgba(255,209,102,0.35);font-family:monospace;font-size:14px;' +
+            'color:white;text-shadow:0 2px 8px rgba(0,0,0,0.6);letter-spacing:0.04em;' +
+            'text-align:center;max-width:min(90vw,600px);opacity:0;transition:opacity 0.3s ease;' +
+            'pointer-events:none;';
+        ui.appendChild(this.playDescEl);
+
+        // --- Bottom transport controls ---
         this.root = document.createElement('div');
         this.root.style.cssText =
             'position:absolute;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);' +
@@ -85,6 +191,69 @@ export class SpectatorOverlay {
         );
     }
 
+    show(): void {
+        this.root.style.display = 'flex';
+        this.broadcastBar.style.display = 'flex';
+    }
+
+    hide(): void {
+        this.root.style.display = 'none';
+        this.broadcastBar.style.display = 'none';
+        this.playDescEl.style.opacity = '0';
+    }
+
+    updateScore(home: number, away: number): void {
+        this.homeScoreEl.textContent = String(home);
+        this.awayScoreEl.textContent = String(away);
+    }
+
+    updatePossession(teamName: string, playerName?: string): void {
+        this.possessionEl.textContent = teamName ? `Possession: ${teamName}` : '';
+        if (playerName !== undefined) {
+            this.playerInfoEl.textContent = playerName ? `Disc: ${playerName}` : '';
+        }
+    }
+
+    updateStallCount(stallCount: number, maxStall: number): void {
+        if (stallCount <= 0) {
+            this.stallCountEl.textContent = '';
+            this.stallCountEl.style.borderColor = 'rgba(255,255,255,0.18)';
+            return;
+        }
+        const clamped = Math.min(maxStall, Math.ceil(stallCount));
+        this.stallCountEl.textContent = `Stall ${clamped}`;
+        const pct = stallCount / maxStall;
+        if (pct >= 0.8) {
+            this.stallCountEl.style.color = '#ff4f5e';
+            this.stallCountEl.style.borderColor = 'rgba(255,79,94,0.6)';
+        } else if (pct >= 0.5) {
+            this.stallCountEl.style.color = '#ffc646';
+            this.stallCountEl.style.borderColor = 'rgba(255,198,70,0.4)';
+        } else {
+            this.stallCountEl.style.color = 'white';
+            this.stallCountEl.style.borderColor = 'rgba(255,255,255,0.18)';
+        }
+    }
+
+    showPlayDescription(text: string, duration?: number): void {
+        if (this.playDescTimer) {
+            clearTimeout(this.playDescTimer);
+            this.playDescTimer = null;
+        }
+        this.playDescEl.textContent = text;
+        this.playDescEl.style.opacity = '1';
+        const ms = duration ?? 4000;
+        this.playDescTimer = setTimeout(() => {
+            this.playDescEl.style.opacity = '0';
+            this.playDescTimer = null;
+        }, ms);
+    }
+
+    setTeamNames(homeName: string, awayName: string): void {
+        this.homeNameEl.textContent = homeName.toUpperCase();
+        this.awayNameEl.textContent = awayName.toUpperCase();
+    }
+
     setState(
         selectedView: SpectatorView,
         speed: number,
@@ -113,7 +282,10 @@ export class SpectatorOverlay {
 
     destroy(): void {
         window.removeEventListener('resize', this.onResize);
+        if (this.playDescTimer) clearTimeout(this.playDescTimer);
         this.root.remove();
+        this.broadcastBar.remove();
+        this.playDescEl.remove();
     }
 
     private applyResponsiveLayout(): void {
@@ -126,6 +298,15 @@ export class SpectatorOverlay {
             : 'repeat(5,minmax(0,1fr))';
         this.statusEl.style.fontSize = compact ? '10px' : '11px';
         this.hintsEl.style.fontSize = compact ? '9px' : '10px';
+        // Scale the broadcast bar for mobile
+        this.homeNameEl.style.fontSize = compact ? '11px' : '14px';
+        this.awayNameEl.style.fontSize = compact ? '11px' : '14px';
+        this.homeScoreEl.style.fontSize = compact ? '22px' : '28px';
+        this.awayScoreEl.style.fontSize = compact ? '22px' : '28px';
+        this.homeNameEl.style.padding = compact ? '6px 8px' : '8px 14px';
+        this.awayNameEl.style.padding = compact ? '6px 8px' : '8px 14px';
+        this.playDescEl.style.top = compact ? '90px' : '120px';
+        this.playDescEl.style.fontSize = compact ? '12px' : '14px';
     }
 }
 

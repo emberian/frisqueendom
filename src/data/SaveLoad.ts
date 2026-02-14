@@ -202,6 +202,40 @@ export interface ScoutingReport {
     gamePlan?: string;
 }
 
+export interface SimulationResult {
+    homeScore: number;
+    awayScore: number;
+    pointLog: { scorer: string; assister: string; team: 'home' | 'away' }[];
+    highlights: { description: string; player: string; type: string }[];
+    stats: { playerId: string; goals: number; assists: number; blocks: number; turnovers: number }[];
+    spiritScores: [number, number];
+    mvp: string;
+}
+
+export interface ScoutReport {
+    teamName: string;
+    overallRating: number;
+    offenseStyle: string;
+    defenseStyle: string;
+    keyPlayers: { name: string; role: string; rating: number }[];
+    weaknesses: string[];
+}
+
+export type CultureEvent =
+    | { type: 'win_vs_higher'; opponentRating: number; playerRating: number }
+    | { type: 'spirit_award' }
+    | { type: 'hard_practice' }
+    | { type: 'complex_playbook' }
+    | { type: 'close_game_win'; pointDiff: number };
+
+export interface CultureBonuses {
+    closeGameStatsBonus: number;
+    recruitingAppealBonus: number;
+    physicalStatsBonus: number;
+    aiDecisionBonus: number;
+    clutchComposureBonus: number;
+}
+
 export interface SpiritIncident {
     id: string;
     season: number;
@@ -338,12 +372,19 @@ export interface LeagueStanding {
     secondaryColor: number;
 }
 
+export interface BudgetLineItem {
+    source: string;
+    amount: number;
+}
+
 export interface TeamFinances {
     budget: number;
     playerSalaries: number;
     tournamentFees: number;
     travelCosts: number;
     revenue: number;
+    income: BudgetLineItem[];
+    expenses: BudgetLineItem[];
 }
 
 export interface TeamReputation {
@@ -1472,6 +1513,8 @@ export function createNewCareer(
             tournamentFees: 0,
             travelCosts: 0,
             revenue: 0,
+            income: [{ source: 'Starting funds', amount: CAREER_CONSTANTS.STARTING_BUDGET }],
+            expenses: [{ source: 'Initial roster salaries', amount: roster.length * CAREER_CONSTANTS.PLAYER_SALARY_BASE }],
         },
         reputation,
     };
@@ -2137,6 +2180,19 @@ function hydrateCareerData(
         standings,
         schedule: migratedSchedule,
         reputation,
+        finances: {
+            budget: Number(career.finances?.budget) || CAREER_CONSTANTS.STARTING_BUDGET,
+            playerSalaries: Number(career.finances?.playerSalaries) || 0,
+            tournamentFees: Number(career.finances?.tournamentFees) || 0,
+            travelCosts: Number(career.finances?.travelCosts) || 0,
+            revenue: Number(career.finances?.revenue) || 0,
+            income: Array.isArray((career.finances as any)?.income)
+                ? (career.finances as any).income
+                : [],
+            expenses: Array.isArray((career.finances as any)?.expenses)
+                ? (career.finances as any).expenses
+                : [],
+        },
     };
 }
 

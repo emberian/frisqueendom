@@ -17,6 +17,14 @@ function lerpAngle(a: number, b: number, t: number): number {
     return a + diff * t;
 }
 
+export interface PivotState {
+    active: boolean;
+    pivotPoint: THREE.Vector3;  // where the pivot foot is planted
+    facingAngle: number;        // current facing around pivot
+}
+
+const DEFAULT_PIVOT_TURN_RATE = 3.0; // rad/s
+
 export class MovementController {
     position = new THREE.Vector3();
     velocity = new THREE.Vector3();
@@ -28,8 +36,39 @@ export class MovementController {
     deceleration = PLAYER_DECELERATION;
     private _isSprinting = false;
 
+    // Pivot foot state
+    private _pivot: PivotState = {
+        active: false,
+        pivotPoint: new THREE.Vector3(),
+        facingAngle: 0,
+    };
+
     get isSprinting(): boolean {
         return this._isSprinting;
+    }
+
+    get pivotState(): PivotState {
+        return this._pivot;
+    }
+
+    /** Plant the pivot foot at the given position. */
+    enterPivotMode(position: THREE.Vector3): void {
+        this._pivot.active = true;
+        this._pivot.pivotPoint.copy(position);
+        this._pivot.facingAngle = this.facing;
+        // Snap position to pivot point and zero velocity
+        this.position.copy(position);
+        this.velocity.set(0, 0, 0);
+    }
+
+    /** Release the pivot foot. */
+    exitPivotMode(): void {
+        this._pivot.active = false;
+    }
+
+    /** Whether pivot mode is currently active. */
+    isPivotActive(): boolean {
+        return this._pivot.active;
     }
 
     update(
@@ -37,6 +76,17 @@ export class MovementController {
         inputDir: { x: number; z: number },
         sprint: boolean,
     ): void {
+        // If pivot mode is active, delegate to pivot update
+        if (this._pivot.active) {
+            this.updatePivot(dt, inputDir, DEFAULT_PIVOT_TURN_RATE);
+            // Regenerate stamina while pivoting (player is stationary)
+            this.stamina = Math.min(
+                STAMINA_MAX,
+                this.stamina + STAMINA_IDLE_REGEN * dt,
+            );
+            return;
+        }
+
         this._isSprinting = sprint && this.stamina > 0;
 
         const maxSpeed = this._isSprinting
@@ -121,6 +171,12 @@ export class MovementController {
         pivotRate: number,
     ): void {
         this.velocity.set(0, 0, 0);
+        // A/D (inputDir.x) rotates facing; W/S have no effect in pivot
         this.facing += inputDir.x * pivotRate * dt;
+        // Keep position locked to pivot point
+        if (this._pivot.active) {
+            this.position.copy(this._pivot.pivotPoint);
+            this._pivot.facingAngle = this.facing;
+        }
     }
 }
