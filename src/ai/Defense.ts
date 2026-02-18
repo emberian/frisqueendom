@@ -192,6 +192,141 @@ export function assignZone331Positions(
     return zones;
 }
 
+export function assignZoneCupPositions(
+    defenders: Player[],
+    discPos: THREE.Vector3,
+    attackingEndzone: number,
+): Map<Player, THREE.Vector3> {
+    const dir = attackingEndzone === 0 ? -1 : 1;
+    const halfW = FIELD_WIDTH / 2;
+    const zones = new Map<Player, THREE.Vector3>();
+    const sorted = [...defenders].sort((a, b) => {
+        const sa = a.stats?.getEffectiveStat('speed') ?? 50;
+        const sb = b.stats?.getEffectiveStat('speed') ?? 50;
+        return sb - sa;
+    });
+
+    // 3 cup players around disc handler (~5m spread)
+    const cupZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 2));
+    // Mark directly on handler
+    zones.set(sorted[4] ?? sorted[0], new THREE.Vector3(
+        Math.max(-halfW * 0.47, Math.min(halfW * 0.47, discPos.x)),
+        0, cupZ));
+    // Left wing at ~5m
+    zones.set(sorted[5] ?? sorted[1], new THREE.Vector3(
+        Math.max(-halfW * 0.47, Math.min(halfW * 0.47, discPos.x - 5)),
+        0, cupZ));
+    // Right wing at ~5m
+    zones.set(sorted[6] ?? sorted[2], new THREE.Vector3(
+        Math.max(-halfW * 0.47, Math.min(halfW * 0.47, discPos.x + 5)),
+        0, cupZ));
+
+    // 2 mid-field players
+    const midZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 12));
+    zones.set(sorted[1] ?? sorted[3], new THREE.Vector3(
+        Math.max(-halfW * 0.4, Math.min(halfW * 0.4, -halfW * 0.35)),
+        0, midZ));
+    zones.set(sorted[2] ?? sorted[4], new THREE.Vector3(
+        Math.max(-halfW * 0.4, Math.min(halfW * 0.4, halfW * 0.35)),
+        0, midZ));
+
+    // 1 short-deep
+    const shortDeepZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 20));
+    zones.set(sorted[3] ?? sorted[5], new THREE.Vector3(0, 0, shortDeepZ));
+
+    // 1 deep-deep
+    const deepZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 32));
+    zones.set(sorted[0], new THREE.Vector3(0, 0, deepZ));
+
+    return zones;
+}
+
+export function assignZoneWallPositions(
+    defenders: Player[],
+    discPos: THREE.Vector3,
+    attackingEndzone: number,
+): Map<Player, THREE.Vector3> {
+    const dir = attackingEndzone === 0 ? -1 : 1;
+    const halfW = FIELD_WIDTH / 2;
+    const zones = new Map<Player, THREE.Vector3>();
+    const sorted = [...defenders].sort((a, b) => {
+        const sa = a.stats?.getEffectiveStat('speed') ?? 50;
+        const sb = b.stats?.getEffectiveStat('speed') ?? 50;
+        return sb - sa;
+    });
+
+    // 4 players in horizontal wall across field at disc depth + 10m
+    const wallZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 10));
+    const wallSpacing = halfW * 0.6;
+    zones.set(sorted[2], new THREE.Vector3(-wallSpacing, 0, wallZ));
+    zones.set(sorted[3], new THREE.Vector3(-wallSpacing * 0.33, 0, wallZ));
+    zones.set(sorted[4] ?? sorted[0], new THREE.Vector3(wallSpacing * 0.33, 0, wallZ));
+    zones.set(sorted[5] ?? sorted[1], new THREE.Vector3(wallSpacing, 0, wallZ));
+
+    // 2 chasers near disc
+    const chaserZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 2));
+    zones.set(sorted[6] ?? sorted[2], new THREE.Vector3(
+        Math.max(-halfW * 0.3, Math.min(halfW * 0.3, discPos.x - 3)),
+        0, chaserZ));
+    zones.set(sorted[1], new THREE.Vector3(
+        Math.max(-halfW * 0.3, Math.min(halfW * 0.3, discPos.x + 3)),
+        0, chaserZ));
+
+    // 1 deep safety
+    const safetyZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 28));
+    zones.set(sorted[0], new THREE.Vector3(0, 0, safetyZ));
+
+    return zones;
+}
+
+export function assignSurroundPositions(
+    defenders: Player[],
+    discPos: THREE.Vector3,
+    attackingEndzone: number,
+): Map<Player, THREE.Vector3> {
+    const dir = attackingEndzone === 0 ? -1 : 1;
+    const halfW = FIELD_WIDTH / 2;
+    const zones = new Map<Player, THREE.Vector3>();
+    const sorted = [...defenders].sort((a, b) => {
+        const sa = a.stats?.getEffectiveStat('speed') ?? 50;
+        const sb = b.stats?.getEffectiveStat('speed') ?? 50;
+        return sb - sa;
+    });
+
+    // Diamond/box: 4 players surrounding handler area at ~4m
+    // Front (downfield from handler)
+    zones.set(sorted[3], new THREE.Vector3(
+        Math.max(-halfW * 0.47, Math.min(halfW * 0.47, discPos.x)),
+        0, Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 4))));
+    // Back (upfield from handler)
+    zones.set(sorted[4] ?? sorted[0], new THREE.Vector3(
+        Math.max(-halfW * 0.47, Math.min(halfW * 0.47, discPos.x)),
+        0, Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z - dir * 4))));
+    // Left
+    zones.set(sorted[5] ?? sorted[1], new THREE.Vector3(
+        Math.max(-halfW * 0.47, Math.min(halfW * 0.47, discPos.x - 4)),
+        0, Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z))));
+    // Right
+    zones.set(sorted[6] ?? sorted[2], new THREE.Vector3(
+        Math.max(-halfW * 0.47, Math.min(halfW * 0.47, discPos.x + 4)),
+        0, Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z))));
+
+    // 2 mid cutter defenders
+    const midZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 14));
+    zones.set(sorted[1], new THREE.Vector3(
+        Math.max(-halfW * 0.4, Math.min(halfW * 0.4, -halfW * 0.3)),
+        0, midZ));
+    zones.set(sorted[2], new THREE.Vector3(
+        Math.max(-halfW * 0.4, Math.min(halfW * 0.4, halfW * 0.3)),
+        0, midZ));
+
+    // 1 deep safety
+    const deepZ = Math.max(2, Math.min(FIELD_LENGTH - 2, discPos.z + dir * 28));
+    zones.set(sorted[0], new THREE.Vector3(0, 0, deepZ));
+
+    return zones;
+}
+
 /**
  * Detect if the opposing defense is playing zone based on positioning patterns.
  * Zone indicators: defenders clustered near disc, spread across width,

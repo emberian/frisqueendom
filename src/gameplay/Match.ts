@@ -402,6 +402,13 @@ export class Match {
                     this.showText('CALLAHAN!');
                 }
             } else {
+                // For OB turnovers, snap disc to nearest in-bounds point immediately
+                // so players never run to an out-of-bounds position
+                if (this.point.turnoverReason === 'out_of_bounds' && !isInBounds(disc.position)) {
+                    const inBounds = nearestInBoundsPoint(disc.position);
+                    disc.position.copy(inBounds);
+                    disc.mesh.position.copy(inBounds);
+                }
                 this.phase = 'turnover_reset';
                 this.phaseTimer = 0;
                 this.swapPossession();

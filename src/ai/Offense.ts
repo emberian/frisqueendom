@@ -177,6 +177,27 @@ export function computeHandlerPositions(
     return HANDLER_POSITIONS;
 }
 
+export function computeHexCutterPositions(discPos: THREE.Vector3, attackingEndzone: 0 | 1): THREE.Vector3[] {
+    const dir = attackingEndzone === 1 ? 1 : -1;
+    const halfW = FIELD_WIDTH / 2;
+    return [
+        new THREE.Vector3(Math.max(-halfW * 0.4, Math.min(halfW * 0.4, 0)), 0, discPos.z + 12 * dir),
+        new THREE.Vector3(Math.max(-halfW * 0.4, Math.min(halfW * 0.4, -8)), 0, discPos.z + 10 * dir),
+        new THREE.Vector3(Math.max(-halfW * 0.4, Math.min(halfW * 0.4, 8)), 0, discPos.z + 10 * dir),
+        new THREE.Vector3(Math.max(-halfW * 0.4, Math.min(halfW * 0.4, 0)), 0, discPos.z + 22 * dir),
+    ];
+}
+
+export function computeHexHandlerPositions(discPos: THREE.Vector3, attackingEndzone: 0 | 1): THREE.Vector3[] {
+    const dir = attackingEndzone === 1 ? 1 : -1;
+    const halfW = FIELD_WIDTH / 2;
+    return [
+        new THREE.Vector3(0, 0, discPos.z - 5 * dir),
+        new THREE.Vector3(Math.max(-halfW * 0.3, Math.min(halfW * 0.3, -6)), 0, discPos.z - 5 * dir),
+        new THREE.Vector3(Math.max(-halfW * 0.3, Math.min(halfW * 0.3, 6)), 0, discPos.z - 5 * dir),
+    ];
+}
+
 export function evaluateOpenness(
     thrower: Player,
     receiver: Player,

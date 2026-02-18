@@ -21,7 +21,7 @@ export type {
 
 export type { Screen } from './screens/ScreenInterface';
 
-export { getMatchSetupConfig } from './screens/MatchSetupScreen';
+export { getMatchSetupConfig, getSelectedOffenseFormation, getSelectedDefenseFormation } from './screens/MatchSetupScreen';
 
 // ---------------------------------------------------------------------------
 // Scene Transition Helpers  (kept here -- they are module-level utilities)
