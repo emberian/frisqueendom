@@ -14,7 +14,7 @@ import {
 
 describe('Team Presets', () => {
     it('should have exactly 10 team presets', () => {
-        expect(TEAM_PRESETS).toHaveLength(10);
+        expect(TEAM_PRESETS).toHaveLength(32);
     });
 
     it('all team presets should have valid colors', () => {

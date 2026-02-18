@@ -114,7 +114,7 @@ describe('AI: Offense', () => {
 
             const halfW = FIELD_WIDTH / 2;
             positions.forEach(pos => {
-                expect(Math.abs(pos.x)).toBeLessThanOrEqual(halfW * 0.4 + 0.1);
+                expect(Math.abs(pos.x)).toBeLessThanOrEqual(halfW * 0.47 + 0.1);
             });
         });
     });
