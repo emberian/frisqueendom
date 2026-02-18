@@ -85,8 +85,8 @@ export class MatchSetupScreen implements Screen {
 
                 <label>Opponent Difficulty:</label>
                 <select id="difficulty">
-                    <option value="easy">Easy</option>
-                    <option value="normal" selected>Normal</option>
+                    <option value="easy" selected>Easy</option>
+                    <option value="normal">Normal</option>
                     <option value="hard">Hard</option>
                 </select>
 
@@ -100,55 +100,59 @@ export class MatchSetupScreen implements Screen {
                 <input type="number" id="score-custom-input" min="1" max="99" value="${cfg.scoreTarget}"
                     style="display:${cfg.scoreTarget !== 11 && cfg.scoreTarget !== 13 && cfg.scoreTarget !== 15 ? 'block' : 'none'};width:80px;padding:6px;border-radius:7px;border:1px solid rgba(255,255,255,0.28);background:rgba(255,255,255,0.1);color:white;font-family:monospace;">
 
-                <label>Win by 2:</label>
-                <div class="setup-btn-group" id="win-by-two-group">
-                    <button class="setup-opt-btn${cfg.winByTwo ? ' active' : ''}" data-val="yes">Yes</button>
-                    <button class="setup-opt-btn${!cfg.winByTwo ? ' active' : ''}" data-val="no">No</button>
-                </div>
+                <details id="advanced-options" style="margin-top:8px;">
+                    <summary style="cursor:pointer;color:rgba(255,255,255,0.7);font-size:13px;letter-spacing:0.06em;font-family:monospace;padding:6px 0;">Advanced Options</summary>
 
-                <label>Point Cap:</label>
-                <div class="setup-btn-group" id="point-cap-group">
-                    <button class="setup-opt-btn${cfg.pointCap === 0 ? ' active' : ''}" data-val="0">None</button>
-                    <button class="setup-opt-btn${cfg.pointCap === 17 ? ' active' : ''}" data-val="17">17</button>
-                    <button class="setup-opt-btn${cfg.pointCap === 19 ? ' active' : ''}" data-val="19">19</button>
-                    <button class="setup-opt-btn${cfg.pointCap !== 0 && cfg.pointCap !== 17 && cfg.pointCap !== 19 ? ' active' : ''}" data-val="custom" id="cap-custom-btn">Custom</button>
-                </div>
-                <input type="number" id="cap-custom-input" min="1" max="99" value="${cfg.pointCap || ''}"
-                    style="display:${cfg.pointCap !== 0 && cfg.pointCap !== 17 && cfg.pointCap !== 19 ? 'block' : 'none'};width:80px;padding:6px;border-radius:7px;border:1px solid rgba(255,255,255,0.28);background:rgba(255,255,255,0.1);color:white;font-family:monospace;">
+                    <label>Win by 2:</label>
+                    <div class="setup-btn-group" id="win-by-two-group">
+                        <button class="setup-opt-btn${cfg.winByTwo ? ' active' : ''}" data-val="yes">Yes</button>
+                        <button class="setup-opt-btn${!cfg.winByTwo ? ' active' : ''}" data-val="no">No</button>
+                    </div>
 
-                <label>Time of Day:</label>
-                <div class="setup-btn-group" id="time-of-day-group">
-                    <button class="setup-opt-btn${cfg.timeOfDay === 'morning' ? ' active' : ''}" data-val="morning">Morning</button>
-                    <button class="setup-opt-btn${cfg.timeOfDay === 'midday' ? ' active' : ''}" data-val="midday">Midday</button>
-                    <button class="setup-opt-btn${cfg.timeOfDay === 'golden_hour' ? ' active' : ''}" data-val="golden_hour">Golden Hour</button>
-                    <button class="setup-opt-btn${cfg.timeOfDay === 'sunset' ? ' active' : ''}" data-val="sunset">Sunset</button>
-                    <button class="setup-opt-btn${cfg.timeOfDay === 'night' ? ' active' : ''}" data-val="night">Night</button>
-                </div>
+                    <label>Point Cap:</label>
+                    <div class="setup-btn-group" id="point-cap-group">
+                        <button class="setup-opt-btn${cfg.pointCap === 0 ? ' active' : ''}" data-val="0">None</button>
+                        <button class="setup-opt-btn${cfg.pointCap === 17 ? ' active' : ''}" data-val="17">17</button>
+                        <button class="setup-opt-btn${cfg.pointCap === 19 ? ' active' : ''}" data-val="19">19</button>
+                        <button class="setup-opt-btn${cfg.pointCap !== 0 && cfg.pointCap !== 17 && cfg.pointCap !== 19 ? ' active' : ''}" data-val="custom" id="cap-custom-btn">Custom</button>
+                    </div>
+                    <input type="number" id="cap-custom-input" min="1" max="99" value="${cfg.pointCap || ''}"
+                        style="display:${cfg.pointCap !== 0 && cfg.pointCap !== 17 && cfg.pointCap !== 19 ? 'block' : 'none'};width:80px;padding:6px;border-radius:7px;border:1px solid rgba(255,255,255,0.28);background:rgba(255,255,255,0.1);color:white;font-family:monospace;">
 
-                <label>Venue:</label>
-                <div class="setup-btn-group" id="venue-group">
-                    <button class="setup-opt-btn${cfg.venue === 'park' ? ' active' : ''}" data-val="park">Park</button>
-                    <button class="setup-opt-btn${cfg.venue === 'tournament' ? ' active' : ''}" data-val="tournament">Tournament</button>
-                    <button class="setup-opt-btn${cfg.venue === 'stadium' ? ' active' : ''}" data-val="stadium">Stadium</button>
-                </div>
+                    <label>Time of Day:</label>
+                    <div class="setup-btn-group" id="time-of-day-group">
+                        <button class="setup-opt-btn${cfg.timeOfDay === 'morning' ? ' active' : ''}" data-val="morning">Morning</button>
+                        <button class="setup-opt-btn${cfg.timeOfDay === 'midday' ? ' active' : ''}" data-val="midday">Midday</button>
+                        <button class="setup-opt-btn${cfg.timeOfDay === 'golden_hour' ? ' active' : ''}" data-val="golden_hour">Golden Hour</button>
+                        <button class="setup-opt-btn${cfg.timeOfDay === 'sunset' ? ' active' : ''}" data-val="sunset">Sunset</button>
+                        <button class="setup-opt-btn${cfg.timeOfDay === 'night' ? ' active' : ''}" data-val="night">Night</button>
+                    </div>
 
-                <label>Wind:</label>
-                <div class="setup-btn-group" id="wind-group">
-                    <button class="setup-opt-btn${cfg.wind === 'calm' ? ' active' : ''}" data-val="calm">Calm</button>
-                    <button class="setup-opt-btn${cfg.wind === 'breezy' ? ' active' : ''}" data-val="breezy">Breezy</button>
-                    <button class="setup-opt-btn${cfg.wind === 'windy' ? ' active' : ''}" data-val="windy">Windy</button>
-                    <button class="setup-opt-btn${cfg.wind === 'gusty' ? ' active' : ''}" data-val="gusty">Gusty</button>
-                    <button class="setup-opt-btn${cfg.wind === 'random' ? ' active' : ''}" data-val="random">Random</button>
-                </div>
+                    <label>Venue:</label>
+                    <div class="setup-btn-group" id="venue-group">
+                        <button class="setup-opt-btn${cfg.venue === 'park' ? ' active' : ''}" data-val="park">Park</button>
+                        <button class="setup-opt-btn${cfg.venue === 'tournament' ? ' active' : ''}" data-val="tournament">Tournament</button>
+                        <button class="setup-opt-btn${cfg.venue === 'stadium' ? ' active' : ''}" data-val="stadium">Stadium</button>
+                    </div>
 
-                <label>Weather:</label>
-                <select id="weather">
-                    <option value="clear" selected>Clear</option>
-                    <option value="overcast">Overcast</option>
-                    <option value="rain">Rain</option>
-                    <option value="cold">Cold</option>
-                    <option value="hot">Hot</option>
-                </select>
+                    <label>Wind:</label>
+                    <div class="setup-btn-group" id="wind-group">
+                        <button class="setup-opt-btn${cfg.wind === 'calm' ? ' active' : ''}" data-val="calm">Calm</button>
+                        <button class="setup-opt-btn${cfg.wind === 'breezy' ? ' active' : ''}" data-val="breezy">Breezy</button>
+                        <button class="setup-opt-btn${cfg.wind === 'windy' ? ' active' : ''}" data-val="windy">Windy</button>
+                        <button class="setup-opt-btn${cfg.wind === 'gusty' ? ' active' : ''}" data-val="gusty">Gusty</button>
+                        <button class="setup-opt-btn${cfg.wind === 'random' ? ' active' : ''}" data-val="random">Random</button>
+                    </div>
+
+                    <label>Weather:</label>
+                    <select id="weather">
+                        <option value="clear" selected>Clear</option>
+                        <option value="overcast">Overcast</option>
+                        <option value="rain">Rain</option>
+                        <option value="cold">Cold</option>
+                        <option value="hot">Hot</option>
+                    </select>
+                </details>
 
                 <label>Multiplayer:</label>
                 <select id="multiplayer-mode">

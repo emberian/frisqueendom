@@ -854,11 +854,11 @@ function pollGamepad(dt: number): void {
     gamepadThumber = isButtonPressed(pad, 5);
     gamepadHigh = isButtonPressed(pad, 12);
     gamepadLow = isButtonPressed(pad, 13);
-    gamepadTimeout = isButtonPressed(pad, 6);
+    gamepadTimeout = isButtonPressed(pad, 8);
     gamepadFoul = isButtonPressed(pad, 11);
-    gamepadPause = isButtonPressed(pad, 9);
+    gamepadPause = isButtonPressed(pad, 9) && !isButtonPressed(pad, 8);
 
-    const switchPressed = isButtonPressed(pad, 2) || isButtonPressed(pad, 8);
+    const switchPressed = isButtonPressed(pad, 2);
     if (switchPressed && !gamepadSwitchPrev) switchQueued = true;
     gamepadSwitchPrev = switchPressed;
 

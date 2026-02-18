@@ -306,6 +306,35 @@ export class Minimap {
     }
 
     /**
+     * Shrink and reposition minimap for mobile touch screens.
+     * Moves to top-left corner to avoid conflicting with touch controls at bottom.
+     */
+    setMobileMode(enabled: boolean): void {
+        if (enabled) {
+            const scale = 0.55;
+            const w = Math.round(this.width * scale);
+            const h = Math.round(this.height * scale);
+            this.container.style.width = `${w}px`;
+            this.container.style.height = `${h}px`;
+            this.canvas.style.width = `${w}px`;
+            this.canvas.style.height = `${h}px`;
+            this.container.style.top = '80px';
+            this.container.style.bottom = 'auto';
+            this.container.style.right = '8px';
+            this.container.style.opacity = '0.75';
+        } else {
+            this.container.style.width = `${this.width}px`;
+            this.container.style.height = `${this.height}px`;
+            this.canvas.style.width = `${this.width}px`;
+            this.canvas.style.height = `${this.height}px`;
+            this.container.style.top = 'auto';
+            this.container.style.bottom = '20px';
+            this.container.style.right = '20px';
+            this.container.style.opacity = '1';
+        }
+    }
+
+    /**
      * Show the minimap
      */
     show(): void {

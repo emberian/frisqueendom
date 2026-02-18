@@ -50,20 +50,20 @@ export class DiscTrail {
 
         if (this.count < 2) return;
 
-        // Rebuild buffer from newest to oldest
+        // Rebuild buffer from oldest to newest so the line ends at the disc
         for (let i = 0; i < this.count; i++) {
-            const idx = (this.head - 1 - i + TRAIL_LENGTH) % TRAIL_LENGTH;
+            const idx = (this.head - this.count + i + TRAIL_LENGTH) % TRAIL_LENGTH;
             const p = this.trail[idx];
             this.positions[i * 3] = p.x;
             this.positions[i * 3 + 1] = p.y;
             this.positions[i * 3 + 2] = p.z;
 
-            const t = i / this.count; // 0 = head, 1 = tail
+            const t = i / (this.count - 1); // 0 = oldest, 1 = newest (disc)
             const base = this.overrideColor || this.teamColor;
 
-            // Head is bright white-tinted, tail fades to dim team color
-            const brightness = 1 - t * 0.7; // 1.0 → 0.3
-            const whiteMix = (1 - t) * 0.5; // head has 50% white blend
+            // Tail is dim team color, head (disc) is bright white-tinted
+            const brightness = 0.3 + t * 0.7; // 0.3 → 1.0
+            const whiteMix = t * 0.5; // oldest has no white, newest has 50% white blend
             this.colors[i * 3] = (base.r + (1 - base.r) * whiteMix) * brightness;
             this.colors[i * 3 + 1] = (base.g + (1 - base.g) * whiteMix) * brightness;
             this.colors[i * 3 + 2] = (base.b + (1 - base.b) * whiteMix) * brightness;

@@ -223,8 +223,8 @@ export class TeamAI {
         decisionInterval: 0.1,
         activeCutDuration: 3.0,
         reassignInterval: 2.0,
-        throwDirectionJitter: 0.03,
-        throwSpeedJitter: 0.05,
+        throwDirectionJitter: 0.025,
+        throwSpeedJitter: 0.04,
         secondaryCutChance: 0.35,
         poachChance: 0.16,
         switchDistance: 8.5,
@@ -238,8 +238,8 @@ export class TeamAI {
                 decisionInterval: 0.18,
                 activeCutDuration: 3.4,
                 reassignInterval: 2.5,
-                throwDirectionJitter: 0.09,
-                throwSpeedJitter: 0.15,
+                throwDirectionJitter: 0.04,
+                throwSpeedJitter: 0.06,
                 secondaryCutChance: 0.16,
                 poachChance: 0.08,
                 switchDistance: 10.0,
@@ -269,8 +269,8 @@ export class TeamAI {
             decisionInterval: 0.1,
             activeCutDuration: 3.0,
             reassignInterval: 2.0,
-            throwDirectionJitter: 0.03,
-            throwSpeedJitter: 0.05,
+            throwDirectionJitter: 0.025,
+            throwSpeedJitter: 0.04,
             secondaryCutChance: 0.35,
             poachChance: 0.16,
             switchDistance: 8.5,
@@ -1705,9 +1705,10 @@ export class TeamAI {
 
     private applyThrowVariance(throwParams: ThrowParams): ThrowParams {
         const direction = throwParams.direction.clone();
-        direction.x += (Random.next() - 0.5) * this.profile.throwDirectionJitter;
-        direction.y += (Random.next() - 0.5) * this.profile.throwDirectionJitter;
-        direction.z += (Random.next() - 0.5) * this.profile.throwDirectionJitter;
+        const jitter = this.profile.throwDirectionJitter;
+        direction.x += (Random.next() - 0.5) * jitter;
+        direction.y += (Random.next() - 0.5) * jitter * 0.3; // Much less Y jitter (prevents sailing/diving)
+        direction.z += (Random.next() - 0.5) * jitter;
         direction.normalize();
 
         const speedJitter =
@@ -1716,7 +1717,7 @@ export class TeamAI {
         return {
             ...throwParams,
             direction,
-            speed: Math.max(5, throwParams.speed * speedJitter),
+            speed: Math.max(8, throwParams.speed * speedJitter),
         };
     }
 

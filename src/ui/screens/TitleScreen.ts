@@ -64,6 +64,10 @@ export class TitleScreen implements Screen {
                         <span><b>03</b> Practice Drills</span>
                     </div>
                     <div class="title-command-deck">
+                        <div class="title-quick-play" style="display:flex;gap:12px;margin-bottom:16px;">
+                            <button class="menu-btn primary" id="play-now" style="flex:1;font-size:20px;padding:16px 24px;">Play Now</button>
+                            <button class="menu-btn primary" id="play-2p" style="flex:1;font-size:20px;padding:16px 24px;">2 Player</button>
+                        </div>
                         <div class="menu-profile-card title-player-card">
                             <div class="profile-header">
                                 <div class="profile-level">${progression.level}</div>
@@ -126,8 +130,18 @@ export class TitleScreen implements Screen {
         container.appendChild(title);
         this.root = title;
 
+        // Play Now — instant game with arcade defaults
+        title.querySelector('#play-now')?.addEventListener('click', () => {
+            this.ctx.navigate('/play', { color: 'blue', difficulty: 'easy', gameTo: '7', multiplayer: 'single' });
+        });
+
+        // 2 Player — same-screen split
+        title.querySelector('#play-2p')?.addEventListener('click', () => {
+            this.ctx.navigate('/play', { color: 'blue', difficulty: 'easy', gameTo: '7', multiplayer: 'local_split' });
+        });
+
         title.querySelector('#quick-local')?.addEventListener('click', () => {
-            this.ctx.navigate('/play', { color: 'blue', difficulty: 'normal', gameTo: '15', multiplayer: 'single' });
+            this.ctx.navigate('/play', { color: 'blue', difficulty: 'easy', gameTo: '15', multiplayer: 'single' });
         });
 
         title.querySelector('#quick-online')?.addEventListener('click', () => {

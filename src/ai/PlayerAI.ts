@@ -205,10 +205,10 @@ export function decideOffenseWithDisc(
         bestReceiver.movement.position,
     );
     // Speed scales with distance but with diminishing returns past 20m
-    const distFactor = dist <= 20 ? dist * 0.45 : 9 + (dist - 20) * 0.25;
+    const distFactor = dist <= 20 ? dist * 0.55 : 11 + (dist - 20) * 0.3;
     const speed = Math.max(
-        10,
-        Math.min(26, 8 + distFactor + bestOpenness * 0.5 + bestScore * 0.3),
+        12,
+        Math.min(26, 10 + distFactor + bestOpenness * 0.5 + bestScore * 0.3),
     );
 
     const leadTarget = computeLeadPass(player, bestReceiver, speed);
@@ -259,7 +259,7 @@ export function decideOffenseWithDisc(
         const windX = Math.sin(windDir) * windSpeed;
         const windZ = Math.cos(windDir) * windSpeed;
         const flightTime = dist / speed;
-        const comp = 0.02 * flightTime;
+        const comp = 0.06 * flightTime;
         direction.x -= windX * comp;
         direction.z -= windZ * comp;
         direction.normalize();
@@ -269,7 +269,7 @@ export function decideOffenseWithDisc(
         position: player.movement.position.clone().setY(1.5),
         direction: direction.clone(),
         speed,
-        spinRate: config.spinRate * (0.8 + Random.next() * 0.2),
+        spinRate: config.spinRate * (0.95 + Random.next() * 0.1),
         noseAngle: config.noseAngle + (0.05 - (speed / 30) * 0.1),
         hyzerAngle: config.hyzerDefault + (throwType === 'forehand' ? -0.05 : 0.05),
         releaseHeight: 1.5,

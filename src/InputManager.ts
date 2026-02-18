@@ -64,6 +64,8 @@ export class InputManager implements GameplayInputSource {
     private readonly gamepadOrder: number | null;
     private readonly enableKeyboardMouse: boolean;
     private readonly allowTouch: boolean;
+    private lastConnectedPadId: string | null = null;
+    onGamepadChange: ((connected: boolean, id: string, index: number) => void) | null = null;
 
     private touchControlsEnabled = false;
     private touchMovement = new THREE.Vector2();
@@ -367,6 +369,18 @@ export class InputManager implements GameplayInputSource {
         );
         gamepads.sort((a, b) => a.index - b.index);
         const pad = gamepads[this.gamepadOrder];
+
+        // Detect connection changes
+        const padId = pad?.id ?? null;
+        if (padId !== this.lastConnectedPadId) {
+            if (padId && !this.lastConnectedPadId) {
+                this.onGamepadChange?.(true, padId, pad!.index);
+            } else if (!padId && this.lastConnectedPadId) {
+                this.onGamepadChange?.(false, this.lastConnectedPadId, -1);
+            }
+            this.lastConnectedPadId = padId;
+        }
+
         if (!pad) {
             this.gamepadMovement.set(0, 0);
             this.gamepadSprint = false;
@@ -385,8 +399,8 @@ export class InputManager implements GameplayInputSource {
             return;
         }
 
-        const leftX = applyDeadzone(pad.axes[0] ?? 0, 0.16);
-        const leftY = applyDeadzone(pad.axes[1] ?? 0, 0.16);
+        const leftX = applyResponseCurve(applyDeadzone(pad.axes[0] ?? 0, 0.16));
+        const leftY = applyResponseCurve(applyDeadzone(pad.axes[1] ?? 0, 0.16));
         this.gamepadMovement.set(leftX, -leftY);
 
         const rightX = applyDeadzone(pad.axes[2] ?? 0, 0.2);
@@ -399,8 +413,7 @@ export class InputManager implements GameplayInputSource {
             this.isGamepadButtonPressed(pad, 10) || this.isGamepadButtonPressed(pad, 4);
         this.gamepadJump = this.isGamepadButtonPressed(pad, 0);
 
-        const switchPressed =
-            this.isGamepadButtonPressed(pad, 2) || this.isGamepadButtonPressed(pad, 8);
+        const switchPressed = this.isGamepadButtonPressed(pad, 2);
         if (switchPressed && !this.gamepadSwitchPressedLastFrame) {
             this.gamepadSwitchQueued = true;
         }
@@ -413,7 +426,7 @@ export class InputManager implements GameplayInputSource {
         this.gamepadLowRelease = this.isGamepadButtonPressed(pad, 13);
         this.gamepadPause =
             this.isGamepadButtonPressed(pad, 9) && !this.isGamepadButtonPressed(pad, 8);
-        this.gamepadTimeout = this.isGamepadButtonPressed(pad, 6);
+        this.gamepadTimeout = this.isGamepadButtonPressed(pad, 8);
         this.gamepadFoul = this.isGamepadButtonPressed(pad, 11);
 
         this.gamepadMouseButtons.left = triggerRight > 0.35;
@@ -455,6 +468,22 @@ export class InputManager implements GameplayInputSource {
                 ),
             );
         }
+    }
+
+    triggerRumble(durationMs: number, strong = 0.6, weak = 0.3): void {
+        if (this.gamepadOrder === null || typeof navigator.getGamepads !== 'function') return;
+        const gamepads = Array.from(navigator.getGamepads()).filter(
+            (p): p is Gamepad => p !== null,
+        );
+        gamepads.sort((a, b) => a.index - b.index);
+        const pad = gamepads[this.gamepadOrder];
+        if (!pad?.vibrationActuator) return;
+        pad.vibrationActuator.playEffect('dual-rumble', {
+            startDelay: 0,
+            duration: durationMs,
+            strongMagnitude: strong,
+            weakMagnitude: weak,
+        }).catch(() => { /* not supported */ });
     }
 
     private isGamepadButtonPressed(pad: Gamepad, index: number): boolean {
@@ -872,6 +901,12 @@ function applyDeadzone(value: number, deadzone: number): number {
     if (abs <= deadzone) return 0;
     const scaled = (abs - deadzone) / (1 - deadzone);
     return Math.sign(value) * Math.min(1, scaled);
+}
+
+/** Slight exponential curve for analog stick — more precision near center, full range preserved. */
+function applyResponseCurve(value: number): number {
+    const abs = Math.abs(value);
+    return Math.sign(value) * abs * abs * (2 - abs);
 }
 
 function clamp(value: number, min: number, max: number): number {

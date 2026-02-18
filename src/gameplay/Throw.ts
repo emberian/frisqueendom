@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { GameplayInputSource, InputViewport } from '../InputManager';
-import { THROW_CONFIGS, calculateThrowPower, QUICK_RELEASE_WINDOW } from '../data/GameplayConstants';
+import { THROW_CONFIGS, calculateThrowPower, calculateArcadeThrowPower, QUICK_RELEASE_WINDOW } from '../data/GameplayConstants';
 import type { ThrowParams } from '../data/Types';
 import type { Player } from '../entities/Player';
 import type { GameCamera } from '../rendering/Camera';
@@ -26,18 +26,23 @@ export class ThrowController {
     private raycaster = new THREE.Raycaster();
     private aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.5);
     private intersectPoint = new THREE.Vector3();
-    
+
     // Quick release state
     private lastThrowTime = 0;
     private quickReleaseAvailable = false;
     private continuationMode = false;
-    
+
     // Fake/pump fake
     private isFake = false;
     private fakeTimer = 0;
 
+    // Arcade mode: simplified controls for casual/young players
+    arcadeMode = false;
+
     get power(): number {
-        return calculateThrowPower(this.holdTime);
+        return this.arcadeMode
+            ? calculateArcadeThrowPower(this.holdTime)
+            : calculateThrowPower(this.holdTime);
     }
 
     get charging(): boolean {
@@ -84,22 +89,31 @@ export class ThrowController {
         this.quickReleaseAvailable = timeSinceLastThrow < QUICK_RELEASE_WINDOW;
         
         // Determine throw type from input
-        this.updateThrowType(input);
-        
-        // Update release height
-        if (input.isHighRelease()) {
-            this.releaseHeight = 'high';
-        } else if (input.isLowRelease()) {
-            this.releaseHeight = 'low';
-        } else {
+        if (this.arcadeMode) {
+            // Arcade: only backhand/forehand, no special throws
+            this.throwType = input.mouseButtons.right ? 'forehand' : 'backhand';
             this.releaseHeight = 'normal';
-        }
+            // No hyzer adjustment in arcade — consume scroll silently
+            input.consumeScroll();
+            this.hyzerAccum = 0;
+        } else {
+            this.updateThrowType(input);
 
-        // Hyzer from scroll (with different sensitivity for different throws)
-        const scroll = input.consumeScroll();
-        const hyzerSensitivity = this.throwType === 'blade' ? 0.002 : 0.001;
-        this.hyzerAccum += scroll * hyzerSensitivity;
-        this.hyzerAccum = Math.max(-0.6, Math.min(0.6, this.hyzerAccum));
+            // Update release height
+            if (input.isHighRelease()) {
+                this.releaseHeight = 'high';
+            } else if (input.isLowRelease()) {
+                this.releaseHeight = 'low';
+            } else {
+                this.releaseHeight = 'normal';
+            }
+
+            // Hyzer from scroll (with different sensitivity for different throws)
+            const scroll = input.consumeScroll();
+            const hyzerSensitivity = this.throwType === 'blade' ? 0.002 : 0.001;
+            this.hyzerAccum += scroll * hyzerSensitivity;
+            this.hyzerAccum = Math.max(-0.6, Math.min(0.6, this.hyzerAccum));
+        }
 
         // Compute aim direction from mouse
         this.updateAimDirection(input, camera, player, viewport);

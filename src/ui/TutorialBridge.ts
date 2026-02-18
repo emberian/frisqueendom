@@ -40,6 +40,13 @@ export class TutorialConditionBridge {
     private justCaught = false;
     private catchCount = 0;
 
+    // Transition tracking: only fire conditions on state changes, not every frame
+    private wasMoving = false;
+    private wasSprinting = false;
+    private wasCharging = false;
+    private wasHoldingDisc = false;
+    private wasPreviewVisible = false;
+
     constructor(
         private tutorial: TutorialSystem,
         eventBus: EventBus,
@@ -148,16 +155,19 @@ export class TutorialConditionBridge {
     update(dt: number, state: TutorialFrameState): void {
         if (!this.tutorial.isActive()) return;
 
-        // Movement
+        // Movement — only fire on transition to moving
         const moving = Math.abs(state.movementDir.x) > 0.1 || Math.abs(state.movementDir.z) > 0.1;
-        if (moving) {
+        if (moving && !this.wasMoving) {
             this.tutorial.checkCondition('player_moved');
         }
+        this.wasMoving = moving;
 
-        // Sprint
-        if (state.isSprinting && moving) {
+        // Sprint — only fire on transition to sprinting
+        const sprinting = state.isSprinting && moving;
+        if (sprinting && !this.wasSprinting) {
             this.tutorial.checkCondition('player_sprinted');
         }
+        this.wasSprinting = sprinting;
 
         // Stamina drained
         if (this.staminaWasFull && state.stamina < state.maxStamina * 0.5) {
@@ -168,15 +178,17 @@ export class TutorialConditionBridge {
             this.staminaWasFull = true;
         }
 
-        // Charging (throw wind-up)
-        if (state.isCharging) {
+        // Charging — only fire on transition to charging
+        if (state.isCharging && !this.wasCharging) {
             this.tutorial.checkCondition('throw_charged');
         }
+        this.wasCharging = state.isCharging;
 
-        // Disc pickup
-        if (state.holdingDisc) {
+        // Disc pickup — only fire on transition to holding
+        if (state.holdingDisc && !this.wasHoldingDisc) {
             this.tutorial.checkCondition('disc_picked_up');
         }
+        this.wasHoldingDisc = state.holdingDisc;
 
         // Hyzer / anhyzer adjustment
         if (state.throwType) {
@@ -195,15 +207,12 @@ export class TutorialConditionBridge {
             this.prevHyzer = state.hyzerAccum;
         }
 
-        // Trajectory preview visible
-        if (state.isPreviewVisible) {
+        // Trajectory preview — only fire on transition
+        if (state.isPreviewVisible && !this.wasPreviewVisible) {
             this.tutorial.checkCondition('trajectory_previewed');
-        }
-
-        // Wind observation: just seeing the wind indicator while charging counts
-        if (state.isCharging) {
             this.tutorial.checkCondition('wind_observed');
         }
+        this.wasPreviewVisible = state.isPreviewVisible;
 
         // These conditions are auto-completed by observing gameplay long enough:
         // The tutorial already has skip buttons, but we can trigger them after

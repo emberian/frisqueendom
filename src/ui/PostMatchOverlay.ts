@@ -50,6 +50,7 @@ export class PostMatchOverlay {
         summary: MatchSummaryData,
         onContinue: () => void,
         onWatchHighlights?: () => void,
+        onPlayAgain?: () => void,
     ): void {
         const winnerName =
             summary.homeScore >= summary.awayScore
@@ -148,6 +149,7 @@ export class PostMatchOverlay {
     </div>
     <div style="display:flex;gap:10px;">
         ${onWatchHighlights ? '<button id="watch-highlights" style="padding:10px 14px;border-radius:10px;border:1px solid rgba(143,220,255,0.4);background:rgba(143,220,255,0.1);color:#8fdcff;font-family:monospace;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;">Watch Highlights</button>' : ''}
+        ${onPlayAgain ? '<button id="play-again" style="padding:10px 14px;border-radius:10px;border:1px solid rgba(102,255,102,0.4);background:rgba(102,255,102,0.1);color:#66ff66;font-family:monospace;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;font-weight:bold;">Play Again</button>' : ''}
         <button id="continue-post-match" style="padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.26);background:linear-gradient(150deg,rgba(255,122,34,0.92),rgba(255,77,109,0.9));color:white;font-family:monospace;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;">Continue</button>
     </div>
   </div>
@@ -209,6 +211,13 @@ export class PostMatchOverlay {
             this.root.querySelector('#watch-highlights')?.addEventListener('click', () => {
                 this.hide();
                 onWatchHighlights();
+            });
+        }
+
+        if (onPlayAgain) {
+            this.root.querySelector('#play-again')?.addEventListener('click', () => {
+                this.hide();
+                onPlayAgain();
             });
         }
     }

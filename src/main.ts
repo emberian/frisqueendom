@@ -920,6 +920,15 @@ async function main() {
             });
         }
 
+        // Rumble all local gamepads
+        const rumbleAll = (ms: number, strong = 0.6, weak = 0.3) => {
+            for (const slot of controllerSlots) {
+                if (slot.active && slot.input instanceof InputManager) {
+                    slot.input.triggerRumble(ms, strong, weak);
+                }
+            }
+        };
+
         const shouldConnectLAN =
             lanRemoteEnabled ||
             lanSpectatorMode ||
@@ -1151,6 +1160,14 @@ async function main() {
         // UI
         const hud = new HUD();
         const throwUI = new ThrowUI();
+
+        // Arcade controls mode
+        const arcadeOn = saveManager.getSettings().gameplay.arcadeControls;
+        for (const slot of controllerSlots) {
+            slot.throwCtrl.arcadeMode = arcadeOn;
+        }
+        throwUI.arcadeMode = arcadeOn;
+
         const broadcast = new BroadcastPackage();
         const halftimeOverlay = new HalftimeOverlay();
         const postMatchOverlay = new PostMatchOverlay();
@@ -1168,6 +1185,7 @@ async function main() {
               })
             : null;
         hud.setTouchMode(isSpectator || input.isTouchControlsEnabled());
+        if (input.isTouchControlsEnabled()) minimap.setMobileMode(true);
         hud.setTeams(
             homeTeam.name,
             awayTeam.name,
@@ -2234,6 +2252,7 @@ async function main() {
                     vocalSynth.blowWhistle('short');
                     postFX.triggerBlockShake();
                     screenShake.shakePreset(SHAKE_TURNOVER);
+                    rumbleAll(120, 0.4, 0.2);
                     spawnGroundImpact(particles, disc.position.clone());
                     gameplaySFX.playTurnover();
                     audio.stopDiscHum();
@@ -2369,6 +2388,7 @@ async function main() {
                 });
                 postFX.triggerScoreEffect();
                 screenShake.shakePreset(SHAKE_SCORE);
+                rumbleAll(300, 1.0, 0.5);
                 gameCamera.triggerCrashZoom();
                 particles.emitScoreCelebration(disc.position);
                 spawnScoreEffect(particles, disc.position.clone(),
@@ -2474,7 +2494,13 @@ async function main() {
                     highlights.length > 0 ? () => {
                         currentMode = 'highlights_reel';
                         highlightPlayer.play(replayData, highlights);
-                    } : undefined
+                    } : undefined,
+                    // Play Again: restart with same config (not available in career matches)
+                    !returnToCareerMenu && matchConfig ? () => {
+                        stopGame();
+                        currentMode = 'quick_match';
+                        startGame(matchConfig);
+                    } : undefined,
                 );
             }
 
@@ -2963,6 +2989,7 @@ async function main() {
                             crowdAudio.reactToBlock();
                             stadium.triggerCheer(0.5);
                             screenShake.shakePreset(SHAKE_BLOCK);
+                            rumbleAll(200, 0.8, 0.4);
                             spawnBlockEffect(particles, disc.position.clone());
                             gameplaySFX.playBlock();
                             if (thrownBy) {
@@ -3017,11 +3044,14 @@ async function main() {
                         spawnCatchEffect(particles, disc.position.clone(),
                             result.catcher.team === 'home' ? homeTeamColors.primary : awayTeamColors.primary);
                         gameplaySFX.playCatch();
+                        postFX.triggerCatchEffect();
+                        rumbleAll(60, 0.2, 0.1);
 
                         // Layout catch effects
                         if (result.isLayout) {
                             postFX.triggerLayoutEffect();
                             screenShake.shakePreset(SHAKE_LAYOUT_CATCH);
+                            rumbleAll(150, 0.5, 0.3);
                             crowdAudio.reactToLayout();
                         }
                     }

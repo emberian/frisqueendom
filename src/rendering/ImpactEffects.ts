@@ -89,55 +89,55 @@ export function spawnScoreEffect(
     // Confetti in team color
     particles.emit(
         position,
-        10,             // count
+        15,             // count (was 10)
         teamColor,
         6,              // speed (high launch for celebration arc)
-        1.8,            // life
-        4,              // spread (wide)
+        2.0,            // life
+        5,              // spread (wider)
         PARTICLE_TYPE.CONFETTI,
         [0.06, 0.12],
     );
     // Gold confetti
     particles.emit(
         position,
-        8,              // count
+        12,             // count (was 8)
         0xffd700,       // gold
         5.5,
-        1.5,
-        3.5,
+        1.8,
+        4,
         PARTICLE_TYPE.CONFETTI,
         [0.05, 0.11],
     );
     // White confetti
     particles.emit(
         position,
-        6,              // count
+        9,              // count (was 6)
         0xffffff,       // white
         5,
-        1.6,
-        3,
+        1.8,
+        3.5,
         PARTICLE_TYPE.CONFETTI,
         [0.05, 0.10],
     );
     // Firework sparkles for extra flair
     particles.emit(
         position,
-        4,              // count
+        6,              // count (was 4)
         teamColor,
         7,              // speed (shoots higher)
-        1.2,            // life
-        2.5,
+        1.4,            // life
+        3,
         PARTICLE_TYPE.FIREWORK,
         [0.08, 0.15],
     );
     // Gold sparks
     particles.emit(
         position,
-        4,
+        6,              // count (was 4)
         0xffdd44,
         6,
-        1.4,
-        3,
+        1.6,
+        3.5,
         PARTICLE_TYPE.SPARK,
         [0.03, 0.07],
     );

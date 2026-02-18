@@ -23,6 +23,9 @@ export class PostFX {
     private slowMoRampDownDuration = 0.1;
     private slowMoRampUpDuration = 0.2;
 
+    // Hit freeze: brief 0-speed pause for impact weight
+    private hitFreezeFrames = 0;
+
     private composer: EffectComposer | null = null;
     private bloomPass: UnrealBloomPass | null = null;
     private vignettePass: ShaderPass | null = null;
@@ -402,6 +405,10 @@ export class PostFX {
 
     /** Returns current time scale (1.0 = normal, 0.25 = slow). */
     getTimeScale(): number {
+        if (this.hitFreezeFrames > 0) {
+            this.hitFreezeFrames--;
+            return 0;
+        }
         return this.timeScale;
     }
 
@@ -463,29 +470,40 @@ export class PostFX {
     // --- Existing trigger methods (preserved for backward compat) ---
 
     triggerScoreEffect(): void {
-        this.triggerSlowMo(0.5, 0.25);
-        this.shakeAmplitude = 0.12;
-        this.shakeDecay = 8;
+        this.triggerSlowMo(1.2, 0.2);
+        this.shakeAmplitude = 0.14;
+        this.shakeDecay = 6;
         this.shakeTimer = 0;
         this.bloomPulse = 1.0;
         if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.018;
     }
 
     triggerLayoutEffect(): void {
-        this.triggerSlowMo(0.4, 0.25);
-        this.shakeAmplitude = 0.05;
-        this.shakeDecay = 15;
+        this.triggerSlowMo(0.8, 0.2);
+        this.shakeAmplitude = 0.06;
+        this.shakeDecay = 12;
         this.shakeTimer = 0;
-        this.bloomPulse = 0.5;
-        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.008;
+        this.bloomPulse = 0.6;
+        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.01;
     }
 
     triggerBlockShake(): void {
-        this.shakeAmplitude = 0.08;
-        this.shakeDecay = 10;
+        this.triggerSlowMo(0.6, 0.25);
+        this.hitFreezeFrames = 3;
+        this.shakeAmplitude = 0.1;
+        this.shakeDecay = 8;
         this.shakeTimer = 0;
-        this.bloomPulse = 0.3;
-        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.007;
+        this.bloomPulse = 0.5;
+        if (this.vignettePass) this.vignettePass.uniforms.aberration.value = 0.01;
+    }
+
+    /** Catch impact: brief hit-freeze for weight. */
+    triggerCatchEffect(): void {
+        this.hitFreezeFrames = 2;
+        this.shakeAmplitude = 0.03;
+        this.shakeDecay = 15;
+        this.shakeTimer = 0;
+        this.bloomPulse = 0.15;
     }
 
     triggerSmallShake(): void {

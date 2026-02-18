@@ -125,10 +125,12 @@ export class Player {
         // Check if player is willing to layout based on stats
         if (this.stats) {
             const layoutWillingness = this.stats.getEffectiveStat('layout');
-            const moraleMod = this.stats.morale / 100;
-            const clutchMod = this.stats.attributes.clutch / 100;
-            const chance = (layoutWillingness * moraleMod * clutchMod) / 100;
-            
+            const moraleMod = 0.5 + (this.stats.morale / 200); // 0.5–1.0
+            const clutchMod = 0.5 + (this.stats.attributes.clutch / 200); // 0.5–1.0
+            const chance = (layoutWillingness / 100) * moraleMod * clutchMod;
+            // e.g. layout=60, morale=80, clutch=60 → 0.6 * 0.9 * 0.8 = 43%
+            // layout=80, morale=100, clutch=80 → 0.8 * 1.0 * 0.9 = 72%
+
             if (Random.next() > chance) {
                 return false; // Player chose not to layout
             }

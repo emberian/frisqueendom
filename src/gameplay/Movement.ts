@@ -96,7 +96,7 @@ export class MovementController {
 
         this._isSprinting = sprint && this.stamina > 0;
 
-        const maxSpeed = this._isSprinting
+        const topSpeed = this._isSprinting
             ? this.sprintSpeed
             : this.maxSpeed;
         const inputMag = Math.sqrt(
@@ -106,6 +106,8 @@ export class MovementController {
         if (inputMag > 0.01) {
             const nx = inputDir.x / inputMag;
             const nz = inputDir.z / inputMag;
+            // Analog magnitude scales target speed (stick tilt = proportional speed)
+            const maxSpeed = topSpeed * Math.min(1, inputMag);
             const targetVelX = nx * maxSpeed;
             const targetVelZ = nz * maxSpeed;
             const accel = this.acceleration * dt;
@@ -141,10 +143,10 @@ export class MovementController {
 
         // Clamp speed
         const currentSpeedSq = this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z;
-        if (currentSpeedSq > maxSpeed * maxSpeed) {
+        if (currentSpeedSq > topSpeed * topSpeed) {
             const currentSpeed = Math.sqrt(currentSpeedSq);
-            this.velocity.x = (this.velocity.x / currentSpeed) * maxSpeed;
-            this.velocity.z = (this.velocity.z / currentSpeed) * maxSpeed;
+            this.velocity.x = (this.velocity.x / currentSpeed) * topSpeed;
+            this.velocity.z = (this.velocity.z / currentSpeed) * topSpeed;
         }
 
         // Integrate position

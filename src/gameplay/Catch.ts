@@ -361,7 +361,12 @@ function checkFlightCatch(
                 const toPredicted = predictedDiscPos.clone().sub(player.movement.position);
                 const heightOk = predictedDiscPos.y < 2.5 && predictedDiscPos.y > 0.5;
 
-                if (heightOk && toPredicted.z > 0) {
+                // Check disc is roughly in front of the player (not behind)
+                const facingX = Math.sin(player.movement.facing);
+                const facingZ = Math.cos(player.movement.facing);
+                const forwardDot = toPredicted.x * facingX + toPredicted.z * facingZ;
+
+                if (heightOk && forwardDot > 0) {
                     const canLayout = player.startLayout(predictedDiscPos);
                     if (canLayout) {
                         // Evaluate timing for layout (wider window)
@@ -571,7 +576,11 @@ export function attemptLayout(
     const discDir = disc.position.clone().sub(player.movement.position);
     const dist = discDir.length();
 
-    if (discDir.z < 0) return false;
+    // Check disc is roughly in front of the player (not behind)
+    const facingX = Math.sin(player.movement.facing);
+    const facingZ = Math.cos(player.movement.facing);
+    const forwardDot = discDir.x * facingX + discDir.z * facingZ;
+    if (forwardDot < 0) return false;
 
     const layoutRange = player.getLayoutRadius();
     if (dist > layoutRange * 1.5) return false;

@@ -79,6 +79,44 @@
             z-index: 1;
         }
         
+        /* Portrait rotation prompt for mobile */
+        #rotate-prompt {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            background: #040b17;
+            color: #f1f8ff;
+            font-family: var(--font-body);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            text-align: center;
+            padding: 24px;
+        }
+        #rotate-prompt .rotate-icon {
+            font-size: 64px;
+            animation: rotateHint 2s ease-in-out infinite;
+        }
+        #rotate-prompt .rotate-text {
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+        #rotate-prompt .rotate-sub {
+            font-size: 14px;
+            color: var(--text-dim);
+        }
+        @keyframes rotateHint {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-30deg); }
+            75% { transform: rotate(30deg); }
+        }
+        @media (pointer: coarse) and (orientation: portrait) and (max-width: 900px) {
+            #rotate-prompt { display: flex; }
+        }
+
         #ui {
             position: absolute;
             inset: 0;
@@ -1478,6 +1516,11 @@
     </style>
 </head>
 <body>
+    <div id="rotate-prompt">
+        <div class="rotate-icon">&#x1F4F1;</div>
+        <div class="rotate-text">Rotate your device</div>
+        <div class="rotate-sub">FrisQueendom plays best in landscape</div>
+    </div>
     <div id="ui"></div>
     <div id="menu-container"></div>
     <script>

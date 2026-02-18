@@ -3,6 +3,7 @@ export class ThrowUI {
     private powerBar: HTMLDivElement;
     private powerFill: HTMLDivElement;
     private hyzerIndicator: HTMLDivElement;
+    arcadeMode = false;
 
     constructor() {
         const ui = document.getElementById('ui')!;
@@ -47,15 +48,19 @@ export class ThrowUI {
         else color = '#ff4d6d';
         this.powerFill.style.background = color;
 
-        const grip = isForehand ? 'FH' : 'BH';
-        const hyzerDeg = Math.round(hyzer * (180 / Math.PI));
-        const label =
-            hyzerDeg > 2
-                ? `Hyzer ${hyzerDeg}°`
-                : hyzerDeg < -2
-                  ? `Anhyzer ${-hyzerDeg}°`
-                  : 'Flat';
-        this.hyzerIndicator.textContent = `${grip} | ${label} | ${pct}%`;
+        if (this.arcadeMode) {
+            this.hyzerIndicator.textContent = `${pct}%`;
+        } else {
+            const grip = isForehand ? 'FH' : 'BH';
+            const hyzerDeg = Math.round(hyzer * (180 / Math.PI));
+            const label =
+                hyzerDeg > 2
+                    ? `Hyzer ${hyzerDeg}°`
+                    : hyzerDeg < -2
+                      ? `Anhyzer ${-hyzerDeg}°`
+                      : 'Flat';
+            this.hyzerIndicator.textContent = `${grip} | ${label} | ${pct}%`;
+        }
     }
 
     hide(): void {

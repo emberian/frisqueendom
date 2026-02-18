@@ -79,6 +79,14 @@ export function calculateThrowPower(holdTime: number): number {
     return 0.85;
 }
 
+/** Arcade power curve: wide sweet spot, forgiving timing, no penalty for overcharging. */
+export function calculateArcadeThrowPower(holdTime: number): number {
+    if (holdTime < 0.25) return 0.50 + (holdTime / 0.25) * 0.15;            // 50-65%
+    if (holdTime < 1.2)  return 0.65 + ((holdTime - 0.25) / 0.95) * 0.25;   // 65-90%
+    if (holdTime < 1.8)  return 0.90 + ((holdTime - 1.2) / 0.6) * 0.10;     // 90-100%
+    return 0.95;                                                              // plateau
+}
+
 // Player stat modifiers
 export const STAT_MODIFIERS = {
     // Catch radius

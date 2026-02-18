@@ -418,6 +418,7 @@ export interface GameSettings {
         autoSwitchOnCatch: boolean;
         showTrajectory: boolean;
         stallWarnings: boolean;
+        arcadeControls: boolean;
     };
     controls: {
         mouseSensitivity: number;
@@ -540,6 +541,7 @@ export function getDefaultSettings(): GameSettings {
             autoSwitchOnCatch: true,
             showTrajectory: true,
             stallWarnings: true,
+            arcadeControls: true,
         },
         controls: {
             mouseSensitivity: 1.0,
@@ -704,6 +706,9 @@ export function validateSettings(raw: Partial<GameSettings> | null | undefined):
     merged.gameplay.autoSwitchOnCatch = !!merged.gameplay.autoSwitchOnCatch;
     merged.gameplay.showTrajectory = !!merged.gameplay.showTrajectory;
     merged.gameplay.stallWarnings = !!merged.gameplay.stallWarnings;
+    if (typeof merged.gameplay.arcadeControls !== 'boolean') {
+        merged.gameplay.arcadeControls = defaults.gameplay.arcadeControls;
+    }
 
     // Controls
     const sensitivity = Number(merged.controls.mouseSensitivity);
