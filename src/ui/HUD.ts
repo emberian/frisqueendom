@@ -560,7 +560,8 @@ function buildHelpOverlayHtml(): string {
         ['WASD', 'Move (camera-relative)'],
         ['Shift', 'Sprint (without disc)'],
         ['Space', 'Jump / layout attempt'],
-        ['E', 'Switch controlled player'],
+        ['E', 'Switch controlled player (cycle)'],
+        ['Tab', 'Switch to nearest player to disc'],
     ])}
     ${renderHelpSection('Throwing (Holding Disc)', [
         ['LMB Hold', 'Charge and release throw'],
@@ -586,10 +587,11 @@ function buildHelpOverlayHtml(): string {
         ['RS', 'Aim throw direction'],
         ['RT / LT', 'Throw hold / forehand hold'],
         ['A', 'Jump / quick release'],
-        ['X', 'Switch player'],
+        ['X', 'Switch player (cycle)'],
+        ['Y', 'Switch to nearest / hammer'],
         ['Start', 'Pause'],
         ['Back/Select', 'Call timeout'],
-        ['Y / B / RB', 'Hammer / blade / thumber'],
+        ['B / RB', 'Blade / thumber'],
         ['DPad Up/Down', 'High / low release'],
         ['DPad Left/Right', 'Hyzer / anhyzer curve'],
     ])}

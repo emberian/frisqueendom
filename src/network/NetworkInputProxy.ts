@@ -85,6 +85,10 @@ export class NetworkInputProxy implements GameplayInputSource {
         return true;
     }
 
+    isSwitchToNearest(): boolean {
+        return false; // Not supported on remote controllers yet
+    }
+
     isHammerThrow(): boolean {
         return this.hammer;
     }

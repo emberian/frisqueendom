@@ -7,7 +7,7 @@ export function computeMarkPosition(
     stallCount: number = 0,
 ): THREE.Vector3 {
     // As stall count rises, marker gets closer and more aggressive
-    const proximity = Math.max(0.7, 1.4 - (stallCount / 10) * 0.5);
+    const proximity = Math.max(0.7, 1.4 - (stallCount / 7) * 0.5);
     const lateralOffset = forceSide * 0.7;
 
     const offset = new THREE.Vector3(

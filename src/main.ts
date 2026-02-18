@@ -2536,7 +2536,7 @@ async function main() {
                     slot.switchCooldown = Math.max(0, slot.switchCooldown - frameDt);
                     if (slot.input.isSwitchPlayer() && slot.switchCooldown <= 0) {
                         const teamObj = slot.team === 'home' ? homeTeam : awayTeam;
-                        
+
                         // Switch to next player not controlled by someone else
                         let nextIdx = teamObj.players.indexOf(slot.switching.controlledPlayer!) + 1;
                         for (let i = 0; i < teamObj.players.length; i++) {
@@ -2547,7 +2547,14 @@ async function main() {
                                 break;
                             }
                         }
-                        
+
+                        slot.switchCooldown = 0.3;
+                        if (slot === primarySlot) onboarding?.check('catch_or_switch');
+                    }
+                    // Y / Tab: switch to player nearest to disc
+                    if (slot.input.isSwitchToNearest() && slot.switchCooldown <= 0) {
+                        const teamObj = slot.team === 'home' ? homeTeam : awayTeam;
+                        slot.switching.switchToNearest(disc, teamObj);
                         slot.switchCooldown = 0.3;
                         if (slot === primarySlot) onboarding?.check('catch_or_switch');
                     }
@@ -2573,7 +2580,7 @@ async function main() {
                 
                 if (!pullingTeamHasHuman) {
                     autoPullTimer += frameDt;
-                    if (!broadcast.isPullLocked() && autoPullTimer > 1) {
+                    if (!broadcast.isPullLocked() && autoPullTimer > 0.5) {
                         autoPullTimer = 0;
                         match.executePull(disc, homeTeam, awayTeam);
                         audio.playThrowWhoosh(25);

@@ -142,8 +142,8 @@ export function decideOffenseWithDisc(
             nearestDefDist < 2.8
                 ? ((2.8 - nearestDefDist) / 2.8) * 0.2
                 : 0;
-        const resetBonus = stallCount >= 6 && yardGain < 4 ? 0.22 : 0;
-        const bailoutBonus = stallCount >= 8 ? 0.18 : 0;
+        const resetBonus = stallCount >= 4 && yardGain < 4 ? 0.22 : 0;
+        const bailoutBonus = stallCount >= 6 ? 0.18 : 0;
 
         // Read quality scales how much openness matters vs noise
         const opennessWeight = 0.45 + readQualityMod * 0.15;
@@ -322,8 +322,8 @@ export function decideOffenseWithoutDisc(
     }
 
     // --- Pre-cut deceleration: brief pause/deceleration before cutting ---
-    // For the first ~0.4s of the cut, slow down to "sell the fake"
-    const preCutDelay = 0.4;
+    // Quick jab step to sell the fake, then explode into the cut
+    const preCutDelay = 0.2;
     if (cutTimer < preCutDelay) {
         // Stand still or drift slightly to sell the jab step
         // Use a slow drift in the opposite direction of the eventual cut

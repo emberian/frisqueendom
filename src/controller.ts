@@ -132,7 +132,7 @@ const STORAGE_ROOM = 'fqd_controller_room';
 const MOVE_STICK_RADIUS = 60;
 const AIM_STICK_RADIUS = 50;
 const AIM_SENSITIVITY = 1.8;
-const STALL_MAX = 10;
+const STALL_MAX = 7;
 const HUD_THROTTLE_MS = 100; // 10Hz HUD updates
 
 const STUN_SERVERS: RTCConfiguration = {

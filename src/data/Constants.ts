@@ -20,8 +20,8 @@ export const STAMINA_JOG_REGEN = 5; // per second
 export const STAMINA_IDLE_REGEN = 15; // per second
 
 // Stall count
-export const STALL_DURATION = 10; // seconds
-export const STALL_MAX = 10;
+export const STALL_DURATION = 7; // seconds (tuned for arcade pacing)
+export const STALL_MAX = 7;
 
 // Catch
 export const CATCH_RADIUS = 0.8; // meters, standing catch

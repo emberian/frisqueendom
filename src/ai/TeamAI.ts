@@ -30,6 +30,7 @@ import type { DiscBridge } from '../physics/DiscBridge';
 import { Random } from '../data/SeededRandom';
 import type { Formation, Play } from '../data/SaveLoad';
 import { FIELD_WIDTH, FIELD_LENGTH } from '../data/Constants';
+import { isInBounds, nearestInBoundsPoint } from '../gameplay/FieldBounds';
 
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
 export type AIPersonality =
@@ -211,21 +212,21 @@ export class TeamAI {
     private playerArchetypeProfiles = new Map<number, ArchetypeProfile>();
     private baseProfile: AIDifficultyProfile = {
         decisionInterval: 0.1,
-        activeCutDuration: 3.0,
-        reassignInterval: 2.0,
+        activeCutDuration: 2.2,
+        reassignInterval: 1.6,
         throwDirectionJitter: 0.03,
         throwSpeedJitter: 0.05,
-        secondaryCutChance: 0.35,
+        secondaryCutChance: 0.50,
         poachChance: 0.16,
         switchDistance: 8.5,
     };
     private profile: AIDifficultyProfile = {
         decisionInterval: 0.1,
-        activeCutDuration: 3.0,
-        reassignInterval: 2.0,
+        activeCutDuration: 2.2,
+        reassignInterval: 1.6,
         throwDirectionJitter: 0.025,
         throwSpeedJitter: 0.04,
-        secondaryCutChance: 0.35,
+        secondaryCutChance: 0.50,
         poachChance: 0.16,
         switchDistance: 8.5,
     };
@@ -236,11 +237,11 @@ export class TeamAI {
         if (level === 'easy') {
             this.baseProfile = {
                 decisionInterval: 0.18,
-                activeCutDuration: 3.4,
-                reassignInterval: 2.5,
+                activeCutDuration: 2.4,
+                reassignInterval: 2.0,
                 throwDirectionJitter: 0.04,
                 throwSpeedJitter: 0.06,
-                secondaryCutChance: 0.16,
+                secondaryCutChance: 0.35,
                 poachChance: 0.08,
                 switchDistance: 10.0,
             };
@@ -252,11 +253,11 @@ export class TeamAI {
         if (level === 'hard') {
             this.baseProfile = {
                 decisionInterval: 0.07,
-                activeCutDuration: 2.5,
-                reassignInterval: 1.4,
+                activeCutDuration: 2.0,
+                reassignInterval: 1.2,
                 throwDirectionJitter: 0.015,
                 throwSpeedJitter: 0.03,
-                secondaryCutChance: 0.58,
+                secondaryCutChance: 0.70,
                 poachChance: 0.3,
                 switchDistance: 7.0,
             };
@@ -267,11 +268,11 @@ export class TeamAI {
 
         this.baseProfile = {
             decisionInterval: 0.1,
-            activeCutDuration: 3.0,
-            reassignInterval: 2.0,
+            activeCutDuration: 2.2,
+            reassignInterval: 1.6,
             throwDirectionJitter: 0.025,
             throwSpeedJitter: 0.04,
-            secondaryCutChance: 0.35,
+            secondaryCutChance: 0.50,
             poachChance: 0.16,
             switchDistance: 8.5,
         };
@@ -627,8 +628,12 @@ export class TeamAI {
             if (player.isControlled) continue;
 
             // If this player is assigned to pick up a ground disc, sprint to it
+            // AI runs to the nearest in-bounds point (don't chase disc out of bounds)
             if (player === pickupRunner) {
-                moveToward(player, discPos, dt, true);
+                const pickupTarget = isInBounds(disc.position)
+                    ? discPos
+                    : nearestInBoundsPoint(disc.position);
+                moveToward(player, pickupTarget, dt, true);
                 player.update(dt, null);
                 continue;
             }
@@ -750,7 +755,7 @@ export class TeamAI {
                         const dumpDepth = 6.5;
                         const dumpZ = throwerPos.z - dir * dumpDepth;
                         // Lateral drift: oscillate to stay open, period ~3s
-                        const lateralDrift = Math.sin(this.handlerDriftTimer * 2.1) * 3.5;
+                        const lateralDrift = Math.sin(this.handlerDriftTimer * 2.8) * 5.5;
                         // Bias toward the break side (opposite of disc's X from center)
                         const breakBias = -Math.sign(throwerPos.x || 1) * 1.5;
                         handlerTarget.x = THREE.MathUtils.clamp(
@@ -766,7 +771,7 @@ export class TeamAI {
                         const swingZ = throwerPos.z - dir * swingDepth;
                         // Break side: opposite of the force side, with gentle oscillation
                         const breakSideX = -Math.sign(throwerPos.x || 1) * halfW * 0.32;
-                        const swingDrift = Math.sin(this.handlerDriftTimer * 1.7 + 1.2) * 2.0;
+                        const swingDrift = Math.sin(this.handlerDriftTimer * 2.4 + 1.2) * 3.5;
                         handlerTarget.x = THREE.MathUtils.clamp(
                             breakSideX + swingDrift,
                             -halfW * 0.44,
@@ -806,7 +811,7 @@ export class TeamAI {
                 handlerTarget.x = THREE.MathUtils.clamp(handlerTarget.x, -halfW * 0.47, halfW * 0.47);
                 handlerTarget.z = Math.max(2, Math.min(FIELD_LENGTH - 2, handlerTarget.z));
 
-                moveToward(player, handlerTarget, dt, stallCount >= 8);
+                moveToward(player, handlerTarget, dt, stallCount >= 5);
                 player.update(dt, null);
                 continue;
             }
@@ -845,14 +850,14 @@ export class TeamAI {
                 }
             } else {
                 const cIdx = cutters.indexOf(player);
-                if (stallCount >= 7) {
+                if (stallCount >= 5) {
                     const emergency = new THREE.Vector3(
                         discPos.x + (cIdx % 2 === 0 ? -6 : 6),
                         0,
                         discPos.z - dir * 4,
                     );
                     moveToward(player, emergency, dt, true);
-                } else if (sidelinePressure && stallCount < 6) {
+                } else if (sidelinePressure && stallCount < 4) {
                     const weakSide = -Math.sign(discPos.x || 1) * FIELD_WIDTH * 0.32;
                     const weakFlood = new THREE.Vector3(
                         THREE.MathUtils.clamp(
@@ -884,7 +889,9 @@ export class TeamAI {
                     const halfW = FIELD_WIDTH / 2;
                     repulsedTarget.x = Math.max(-halfW * 0.47, Math.min(halfW * 0.47, repulsedTarget.x));
                     repulsedTarget.z = Math.max(2, Math.min(FIELD_LENGTH - 2, repulsedTarget.z));
-                    moveToward(player, repulsedTarget, dt, false);
+                    // Sprint to stack position when far away (>8m), jog when close
+                    const distToStack = player.movement.position.distanceTo(repulsedTarget);
+                    moveToward(player, repulsedTarget, dt, distToStack > 8);
                 }
             }
 
@@ -1123,8 +1130,8 @@ export class TeamAI {
         // This creates the continuous cutting pattern seen in real ultimate.
         if (current) {
             const currentTimer = this.cutTimers.get(current) || 0;
-            const clearThreshold = 2.5;
-            const overlapWindow = 0.4; // start next cut 0.4s before current clears
+            const clearThreshold = 1.8;
+            const overlapWindow = 0.5; // start next cut 0.5s before current clears
             if (currentTimer > clearThreshold - overlapWindow && scored[1]) {
                 // Next cutter should begin their approach
                 active.add(scored[1].cutter.index);
@@ -1140,17 +1147,16 @@ export class TeamAI {
         );
         if (
             scored[1] &&
-            (stallCount >= 4 || Random.next() < secondaryChance * dt * 4.5)
+            (stallCount >= 2 || Random.next() < secondaryChance * dt * 12)
         ) {
             active.add(scored[1].cutter.index);
         }
         if (
             scored[2] &&
-            (stallCount >= 8 ||
-                (stallCount <= 3 &&
-                    this.tendency.aggression > 0.64 &&
+            (stallCount >= 5 ||
+                (this.tendency.aggression > 0.45 &&
                     !sidelinePressure &&
-                    Random.next() < 0.16 * dt * 6))
+                    Random.next() < 0.25 * dt * 8))
         ) {
             active.add(scored[2].cutter.index);
         }
@@ -1229,16 +1235,16 @@ export class TeamAI {
 
         let roleBias = 0;
         if (cutter.role === 'deep_cutter') {
-            roleBias += stallCount <= 4 ? 0.2 + this.tendency.aggression * 0.2 : -0.12;
+            roleBias += stallCount <= 3 ? 0.2 + this.tendency.aggression * 0.2 : -0.12;
         } else {
-            roleBias += stallCount >= 6 ? 0.14 : 0;
+            roleBias += stallCount >= 4 ? 0.14 : 0;
         }
 
         const tempoNoise =
             (Random.next() - 0.5) *
             THREE.MathUtils.clamp(0.09 + (1.04 - this.tendency.tempo) * 0.06, 0.02, 0.14);
         const laneScore =
-            stallCount >= 6
+            stallCount >= 4
                 ? underReset * (0.7 + this.personalityMods.resetBias * 0.35) +
                   deepGain * (0.18 + this.personalityMods.deepBias * 0.16)
                 : deepGain *
@@ -1278,7 +1284,7 @@ export class TeamAI {
 
         if (
             this.forceSwapTimer <= 0 &&
-            stallCount < 6 &&
+            stallCount < 4 &&
             Random.next() <
                 THREE.MathUtils.clamp(
                     (0.28 + this.tendency.defenseFlex * 0.22) *

@@ -484,7 +484,7 @@ export class Match {
             return;
         }
         this.phaseTimer += dt;
-        if (this.phaseTimer > 2.0) {
+        if (this.phaseTimer > 1.2) {
             this.phase = 'point_reset';
         }
     }

@@ -298,7 +298,7 @@ export class MusicSystem {
 
         if (this.gameState.phase === 'live_play') {
             // Increase BPM with stall count and momentum
-            const stallFactor = Math.min(this.gameState.stallCount / 10, 1);
+            const stallFactor = Math.min(this.gameState.stallCount / 7, 1);
             const momentumFactor = Math.abs(this.gameState.momentum);
             bpmTarget = 100 + stallFactor * 20 + momentumFactor * 20;
         } else if (this.gameState.phase === 'score') {

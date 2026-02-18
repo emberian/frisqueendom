@@ -18,6 +18,7 @@ export interface GameplayInputSource {
     isSprinting(): boolean;
     isJumping(): boolean;
     isSwitchPlayer(): boolean;
+    isSwitchToNearest(): boolean;
     isHammerThrow(): boolean;
     isBladeThrow(): boolean;
     isThumberThrow(): boolean;
@@ -49,6 +50,9 @@ export class InputManager implements GameplayInputSource {
     private switchPressedLastFrame = false;
     private gamepadSwitchPressedLastFrame = false;
     private gamepadSwitchQueued = false;
+    private gamepadNearestPressedLastFrame = false;
+    private gamepadNearestQueued = false;
+    private nearestPressedLastFrame = false;
     private gamepadMovement = new THREE.Vector2();
     private gamepadSprint = false;
     private gamepadJump = false;
@@ -138,6 +142,9 @@ export class InputManager implements GameplayInputSource {
         this.switchPressedLastFrame = false;
         this.gamepadSwitchPressedLastFrame = false;
         this.gamepadSwitchQueued = false;
+        this.gamepadNearestPressedLastFrame = false;
+        this.gamepadNearestQueued = false;
+        this.nearestPressedLastFrame = false;
         this.gamepadMovement.set(0, 0);
         this.gamepadSprint = false;
         this.gamepadJump = false;
@@ -241,6 +248,18 @@ export class InputManager implements GameplayInputSource {
         }
         if (this.gamepadSwitchQueued) {
             this.gamepadSwitchQueued = false;
+            return true;
+        }
+        return justPressed;
+    }
+
+    isSwitchToNearest(): boolean {
+        const nearestPressed = this.keys.has('Tab');
+        const justPressed = nearestPressed && !this.nearestPressedLastFrame;
+        this.nearestPressedLastFrame = nearestPressed;
+
+        if (this.gamepadNearestQueued) {
+            this.gamepadNearestQueued = false;
             return true;
         }
         return justPressed;
@@ -396,6 +415,7 @@ export class InputManager implements GameplayInputSource {
             this.gamepadMouseButtons.left = false;
             this.gamepadMouseButtons.right = false;
             this.gamepadSwitchPressedLastFrame = false;
+            this.gamepadNearestPressedLastFrame = false;
             return;
         }
 
@@ -420,6 +440,12 @@ export class InputManager implements GameplayInputSource {
         this.gamepadSwitchPressedLastFrame = switchPressed;
 
         this.gamepadHammer = this.isGamepadButtonPressed(pad, 3);
+        // Y also queues switch-to-nearest (game loop decides context: throw modifier vs switch)
+        const nearestPressed = this.isGamepadButtonPressed(pad, 3);
+        if (nearestPressed && !this.gamepadNearestPressedLastFrame) {
+            this.gamepadNearestQueued = true;
+        }
+        this.gamepadNearestPressedLastFrame = nearestPressed;
         this.gamepadBlade = this.isGamepadButtonPressed(pad, 1);
         this.gamepadThumber = this.isGamepadButtonPressed(pad, 5);
         this.gamepadHighRelease = this.isGamepadButtonPressed(pad, 12);
