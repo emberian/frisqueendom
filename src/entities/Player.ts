@@ -106,15 +106,17 @@ export class Player {
             // Height affects standing catch radius
             base *= (0.9 + this.stats.getEffectiveStat('height') / STAT_MODIFIERS.HEIGHT_CATCH_MODIFIER);
         }
+        if (this.movement.isAirborne) base *= 1.35;
         return base;
     }
-    
+
     // Get layout catch radius
     getLayoutRadius(): number {
         let base = STAT_MODIFIERS.BASE_LAYOUT_RADIUS;
         if (this.stats) {
             base *= (0.8 + this.stats.getEffectiveStat('jumping') / STAT_MODIFIERS.JUMPING_LAYOUT_MODIFIER);
         }
+        if (this.movement.isAirborne) base *= 1.35;
         return base;
     }
     

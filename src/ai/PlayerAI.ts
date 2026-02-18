@@ -82,6 +82,7 @@ export function decideOffenseWithDisc(
     evalBuffer?: ReceiverEvaluation[],
     scaling?: DifficultyScaling,
     archetype?: ArchetypeProfile,
+    giveAndGoIndices?: Set<number>,
 ): AIAction {
     let bestReceiver: Player | null = null;
     let bestScore = -Infinity;
@@ -142,8 +143,10 @@ export function decideOffenseWithDisc(
             nearestDefDist < 2.8
                 ? ((2.8 - nearestDefDist) / 2.8) * 0.2
                 : 0;
-        const resetBonus = stallCount >= 4 && yardGain < 4 ? 0.22 : 0;
-        const bailoutBonus = stallCount >= 6 ? 0.18 : 0;
+        const resetBonus = stallCount >= 5 ? 0.22
+            : stallCount >= 4 ? 0.18
+            : stallCount >= 3 && yardGain < 4 ? 0.10
+            : 0;
 
         // Read quality scales how much openness matters vs noise
         const opennessWeight = 0.45 + readQualityMod * 0.15;
@@ -155,13 +158,14 @@ export function decideOffenseWithDisc(
             ? (1 - openness) * (dist - 20) / 30 * 0.3
             : 0;
 
+        const giveAndGoBonus = giveAndGoIndices?.has(tm.index) ? 0.15 : 0;
         const score =
             openness * opennessWeight +
             gainScore * (0.2 + throwBias * 0.1) +
             receiverSkill * 0.16 +
             throwerSkill * 0.12 +
             resetBonus +
-            bailoutBonus -
+            giveAndGoBonus -
             difficultyPenalty * 0.22 -
             windPenalty * 0.12 -
             pressurePenalty -
@@ -191,7 +195,7 @@ export function decideOffenseWithDisc(
 
     // Archetype throwBias lowers threshold (gunslinger throws earlier)
     const baseThreshold =
-        stallCount < 3 ? 0.08 : stallCount < 5 ? -0.05 : stallCount < 7 ? -0.2 : -0.5;
+        stallCount < 2 ? 0.08 : stallCount < 4 ? -0.05 : stallCount < 6 ? -0.2 : -0.5;
     const threshold = baseThreshold - throwBias * 0.12 - (scaling?.decisionThreshold ?? 0.08) * 0.5;
     // At stall 8+ still prefer a dump/reset over a wild huck into coverage
     if (!bestReceiver || (bestScore < threshold && stallCount < 8)) {

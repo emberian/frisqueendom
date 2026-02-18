@@ -43,6 +43,11 @@ export class MovementController {
     deceleration = PLAYER_DECELERATION;
     private _isSprinting = false;
 
+    jumpY = 0;
+    private jumpVelocityY = 0;
+    isAirborne = false;
+    private jumpCooldown = 0;
+
     // Pivot foot state
     private _pivot: PivotState = {
         active: false,
@@ -76,6 +81,13 @@ export class MovementController {
     /** Whether pivot mode is currently active. */
     isPivotActive(): boolean {
         return this._pivot.active;
+    }
+
+    triggerJump(): void {
+        if (this.isAirborne || this.jumpCooldown > 0) return;
+        // v = sqrt(2 * g * h) where h = 0.5m, g = 9.81
+        this.jumpVelocityY = Math.sqrt(2 * 9.81 * 0.5); // ~3.13 m/s
+        this.isAirborne = true;
     }
 
     update(
@@ -152,6 +164,21 @@ export class MovementController {
         // Integrate position
         this.position.x += this.velocity.x * dt;
         this.position.z += this.velocity.z * dt;
+
+        // Jump physics
+        if (this.isAirborne) {
+            this.jumpVelocityY -= 9.81 * dt;
+            this.jumpY += this.jumpVelocityY * dt;
+            if (this.jumpY <= 0) {
+                this.jumpY = 0;
+                this.jumpVelocityY = 0;
+                this.isAirborne = false;
+                this.jumpCooldown = 1.0; // 1 second cooldown
+            }
+        }
+        if (this.jumpCooldown > 0) {
+            this.jumpCooldown = Math.max(0, this.jumpCooldown - dt);
+        }
 
         // Clamp to fence boundary
         if (this.position.x < -FENCE_X) { this.position.x = -FENCE_X; this.velocity.x = 0; }

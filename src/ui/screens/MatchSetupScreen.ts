@@ -1,4 +1,17 @@
 import type { Screen, ScreenContext, MultiplayerMode, QuickMatchConfig, MatchSetupConfig } from './ScreenInterface';
+import type { OffenseFormation, DefenseFormation } from '../../data/Types';
+
+/** Module-level formation selections, persist across renders */
+let _offenseFormation: OffenseFormation = 'vertical_stack';
+let _defenseFormation: DefenseFormation = 'man';
+
+export function getSelectedOffenseFormation(): OffenseFormation {
+    return _offenseFormation;
+}
+
+export function getSelectedDefenseFormation(): DefenseFormation {
+    return _defenseFormation;
+}
 
 /** Module-level match setup config, shared across renders */
 let _matchSetupConfig: MatchSetupConfig = {
@@ -154,6 +167,23 @@ export class MatchSetupScreen implements Screen {
                     </select>
                 </details>
 
+                <label>Offense Formation:</label>
+                <div class="setup-btn-group" id="offense-formation-group">
+                    <button class="setup-opt-btn${_offenseFormation === 'vertical_stack' ? ' active' : ''}" data-val="vertical_stack">Vert Stack</button>
+                    <button class="setup-opt-btn${_offenseFormation === 'horizontal_stack' ? ' active' : ''}" data-val="horizontal_stack">Ho Stack</button>
+                    <button class="setup-opt-btn${_offenseFormation === 'hex' ? ' active' : ''}" data-val="hex">Hex</button>
+                    <button class="setup-opt-btn${_offenseFormation === 'zone_offense' ? ' active' : ''}" data-val="zone_offense">Zone O</button>
+                </div>
+
+                <label>Defense Formation:</label>
+                <div class="setup-btn-group" id="defense-formation-group">
+                    <button class="setup-opt-btn${_defenseFormation === 'man' ? ' active' : ''}" data-val="man">Person</button>
+                    <button class="setup-opt-btn${_defenseFormation === 'zone_331' ? ' active' : ''}" data-val="zone_331">Zone 3-3-1</button>
+                    <button class="setup-opt-btn${_defenseFormation === 'zone_cup' ? ' active' : ''}" data-val="zone_cup">Zone Cup</button>
+                    <button class="setup-opt-btn${_defenseFormation === 'zone_wall' ? ' active' : ''}" data-val="zone_wall">Zone Wall</button>
+                    <button class="setup-opt-btn${_defenseFormation === 'surround' ? ' active' : ''}" data-val="surround">Surround</button>
+                </div>
+
                 <label>Multiplayer:</label>
                 <select id="multiplayer-mode">
                     <option value="single" selected>Single Player</option>
@@ -265,6 +295,14 @@ export class MatchSetupScreen implements Screen {
 
         wireButtonGroup('wind-group', (val) => {
             cfg.wind = val;
+        });
+
+        wireButtonGroup('offense-formation-group', (val) => {
+            _offenseFormation = val as OffenseFormation;
+        });
+
+        wireButtonGroup('defense-formation-group', (val) => {
+            _defenseFormation = val as DefenseFormation;
         });
 
         const multiplayerModeEl = menu.querySelector(

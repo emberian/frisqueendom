@@ -8,8 +8,17 @@ import {
     computeHandlerPositions,
     computeZoneOffensePositions,
     computeZoneOffenseHandlerPositions,
+    computeHexCutterPositions,
+    computeHexHandlerPositions,
 } from './Offense';
-import { assignMatchups, assignZone331Positions, detectZoneDefense } from './Defense';
+import {
+    assignMatchups,
+    assignZone331Positions,
+    assignZoneCupPositions,
+    assignZoneWallPositions,
+    assignSurroundPositions,
+    detectZoneDefense,
+} from './Defense';
 import type { OffenseFormation, DefenseFormation } from '../data/Types';
 import {
     decideOffenseWithDisc,
@@ -187,6 +196,8 @@ export class TeamAI {
         | Array<{ role: 'handler' | 'cutter'; x: number; z: number }>
         | null = null;
     private scriptedCuts: ScriptedCut[] = [];
+    private throwCorrectionIterations = 1;
+    private giveAndGoTimers = new Map<number, number>();
     debugEnabled = false;
     private _debugSnapshot: DebugSnapshot | null = null;
     private _lastDebugEvals: ReceiverEvaluation[] = [];
@@ -521,6 +532,10 @@ export class TeamAI {
         const useHStack = !useZoneOffense &&
             this.formation === 'horizontal_stack' &&
             !(this.customFormation && this.customFormation.length > 0);
+        const useHex = !useZoneOffense && !useHStack &&
+            (this.formation === 'hex' || this.formation === 'zone_offense') &&
+            !(this.customFormation && this.customFormation.length > 0);
+        const endzone = (attackingEndzone === 0 ? 0 : 1) as 0 | 1;
 
         const stackPos =
             this.customFormation && this.customFormation.length > 0
@@ -536,6 +551,8 @@ export class TeamAI {
                       )
                 : useZoneOffense
                 ? computeZoneOffensePositions(discPos, attackingEndzone)
+                : useHex
+                ? computeHexCutterPositions(discPos, endzone)
                 : useHStack
                 ? computeHorizontalStackPositions(discPos, attackingEndzone)
                 : computeStackPositions(discPos, attackingEndzone);
@@ -553,6 +570,8 @@ export class TeamAI {
                       )
                 : useZoneOffense
                 ? computeZoneOffenseHandlerPositions(discPos, attackingEndzone)
+                : useHex
+                ? computeHexHandlerPositions(discPos, endzone)
                 : computeHandlerPositions(discPos, attackingEndzone);
         if (stackPos.length === 0) {
             stackPos.push(...computeStackPositions(discPos, attackingEndzone));
@@ -645,6 +664,26 @@ export class TeamAI {
                 continue;
             }
 
+            // Give-and-go: player just threw, sprint upfield toward open space
+            const giveAndGoTimer = this.giveAndGoTimers.get(player.index);
+            if (giveAndGoTimer !== undefined && !player.holdingDisc) {
+                const remaining = giveAndGoTimer - dt;
+                if (remaining <= 0) {
+                    this.giveAndGoTimers.delete(player.index);
+                } else {
+                    this.giveAndGoTimers.set(player.index, remaining);
+                    const giveAndGoTarget = new THREE.Vector3(
+                        player.movement.position.x * 0.7,
+                        0,
+                        player.movement.position.z + dir * 10,
+                    );
+                    giveAndGoTarget.z = Math.max(2, Math.min(FIELD_LENGTH - 2, giveAndGoTarget.z));
+                    moveToward(player, giveAndGoTarget, dt, true);
+                    player.update(dt, null);
+                    continue;
+                }
+            }
+
             if (player.holdingDisc) {
                 // Thrower should face the attacking direction
                 const targetFacing = attackingEndzone === 0 ? Math.PI : 0;
@@ -670,6 +709,7 @@ export class TeamAI {
                 if (staggerFrame && this.decisionTimer > effectiveDecisionWindow) {
                     this.decisionTimer = 0;
                     const newEvals: ReceiverEvaluation[] = [];
+                    const giveAndGoSet = new Set(this.giveAndGoTimers.keys());
                     const action = decideOffenseWithDisc(
                         player,
                         team.players,
@@ -681,6 +721,7 @@ export class TeamAI {
                         this.debugEnabled ? newEvals : undefined,
                         this.offenseScaling,
                         archetypeProfile,
+                        giveAndGoSet,
                     );
                     if (action.type === 'throw' && action.throwParams) {
                         const corrected = action.leadTarget
@@ -691,6 +732,8 @@ export class TeamAI {
                               )
                             : action.throwParams;
                         this.pendingThrow = this.applyThrowVariance(corrected);
+                        // Give-and-go: record thrower for upfield cut after throw
+                        this.giveAndGoTimers.set(player.index, 2.0);
                     }
                     if (this.debugEnabled) {
                         this._lastDebugEvals = newEvals;
@@ -938,7 +981,13 @@ export class TeamAI {
         // Set collision avoidance context for all defenders
         setNearbyPlayersForAvoidance(team.players);
 
-        if (this.defenseType === 'zone_331') {
+        const isZoneDefense =
+            this.defenseType === 'zone_331' ||
+            this.defenseType === 'zone_cup' ||
+            this.defenseType === 'zone_wall' ||
+            this.defenseType === 'surround';
+
+        if (isZoneDefense) {
             this.lastHelpDefenderIndex = null;
             if (
                 this.zonePositions.size === 0 ||
@@ -946,11 +995,19 @@ export class TeamAI {
                 this.reassignTimer > this.profile.reassignInterval
             ) {
                 this.reassignTimer = 0;
-                this.zonePositions = assignZone331Positions(
-                    availableDefenders,
-                    discPos,
-                    attackingEndzone,
-                );
+                if (this.defenseType === 'zone_cup') {
+                    this.zonePositions = assignZoneCupPositions(
+                        availableDefenders, discPos, attackingEndzone);
+                } else if (this.defenseType === 'zone_wall') {
+                    this.zonePositions = assignZoneWallPositions(
+                        availableDefenders, discPos, attackingEndzone);
+                } else if (this.defenseType === 'surround') {
+                    this.zonePositions = assignSurroundPositions(
+                        availableDefenders, discPos, attackingEndzone);
+                } else {
+                    this.zonePositions = assignZone331Positions(
+                        availableDefenders, discPos, attackingEndzone);
+                }
             }
 
             const crashing = new Set<Player>();
@@ -1630,7 +1687,7 @@ export class TeamAI {
         let bestParams = params;
         let bestError = Infinity;
 
-        for (let iter = 0; iter < 3; iter++) {
+        for (let iter = 0; iter < this.throwCorrectionIterations; iter++) {
             // Build direction from throw position to current aim point
             const dx = aimX - params.position.x;
             const dz = aimZ - params.position.z;
@@ -1741,6 +1798,7 @@ export class TeamAI {
         this.facingZoneDefense = false;
         this.zoneDetectTimer = 0;
         this.handlerDriftTimer = 0;
+        this.giveAndGoTimers.clear();
         this.rollTendencyProfile(this.difficultyLevel);
     }
 }

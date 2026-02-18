@@ -82,6 +82,8 @@ import {
     MenuSystem,
     type MultiplayerMode,
     type QuickMatchConfig,
+    getSelectedOffenseFormation,
+    getSelectedDefenseFormation,
 } from './ui/Menus';
 import { SpiritSystem } from './gameplay/Spirit';
 import { CareerManager } from './management/Career';
@@ -1111,21 +1113,20 @@ async function main() {
             if (level === 'easy') return roll < 0.1 ? 'zone_331' : 'man';
             return roll < 0.25 ? 'zone_331' : 'man';
         };
-        const homeFormation = pickFormation(
-            homeDifficulty,
-            homePersonality,
-            Random.next(),
-        );
+        const homeFormation = currentMode === 'quick_match'
+            ? getSelectedOffenseFormation()
+            : pickFormation(homeDifficulty, homePersonality, Random.next());
+        // Consume RNG roll so seed stays consistent regardless of mode
+        if (currentMode === 'quick_match') Random.next();
         const awayFormation = pickFormation(
             opponentDifficulty,
             awayPersonality,
             Random.next(),
         );
-        const homeDefense = pickDefense(
-            homeDifficulty,
-            homePersonality,
-            Random.next(),
-        );
+        const homeDefense = currentMode === 'quick_match'
+            ? getSelectedDefenseFormation()
+            : pickDefense(homeDifficulty, homePersonality, Random.next());
+        if (currentMode === 'quick_match') Random.next();
         const awayDefense = pickDefense(
             opponentDifficulty,
             awayPersonality,
@@ -2622,6 +2623,11 @@ async function main() {
                                 slot.throwCtrl.power,
                                 slot.throwCtrl.hyzer,
                                 slot.throwCtrl.forehand,
+                                {
+                                    highRelease: slot.input.isHighRelease(),
+                                    lowRelease: slot.input.isLowRelease(),
+                                    hyzerAngle: slot.throwCtrl.hyzer,
+                                },
                             );
 
                             if (saveManager.getSettings().gameplay.showTrajectory) {
